@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Consulta de Stock</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='estilos.css') }}">
+</head>
+<body>
+    <h2>Consulta Rendimiento de Stocks</h2>
+    <form method="POST">
+        Código de Acción (Ticker):<br>
+        <input type="text" name="ticker" required><br><br>
+        <button type="submit">Consultar</button>
+    </form>
+
+    {% if resultado %}
+        <h3>Gráfica de Rendimiento:</h3>
+        <img src="{{ url_for('static', filename=resultado.split('/')[-1]) }}" width="700">
+    {% endif %}
+</body>
+</html>

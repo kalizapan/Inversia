@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Inicio de sesión</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='estilos.css') }}">
+</head>
+<body>
+    <h2>Iniciar Sesión</h2>
+    {% if error %}
+        <p style="color:red;">{{ error }}</p>
+    {% endif %}
+    <form method="POST">
+        Email:<br>
+        <input type="email" name="email" required><br>
+        Contraseña:<br>
+        <input type="password" name="password" required><br><br>
+        <button type="submit">Ingresar</button>
+    </form>
+</body>
+</html>
