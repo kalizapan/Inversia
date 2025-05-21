@@ -2,11 +2,11 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Iniciar Sesión</title>
+  <title>Crear Cuenta</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='estilos.css') }}">
 </head>
 <body>
-  <h2>Iniciar Sesión</h2>
+  <h2>Crear Cuenta Nueva</h2>
   {% if error %}
     <p style="color:red;">{{ error }}</p>
   {% endif %}
@@ -15,8 +15,8 @@
     <input type="email" name="email" required><br>
     Contraseña:<br>
     <input type="password" name="password" required><br><br>
-    <button type="submit">Ingresar</button>
+    <button type="submit">Registrar</button>
   </form>
-  <p>¿No tienes cuenta? <a href="{{ url_for('register') }}">Crear una cuenta nueva</a></p>
+  <p>¿Ya tienes cuenta? <a href="{{ url_for('login') }}">Iniciar sesión</a></p>
 </body>
 </html>
