@@ -1,17 +1,28 @@
 # app.py
 
+import os
+import time
+import requests
+import numpy as np
+import pandas as pd
+
+# 1) Forzar backend no interactivo de Matplotlib
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
 from flask import Flask, render_template, request, redirect, session
-import requests, os, numpy as np, pandas as pd, matplotlib.pyplot as plt
+
+# SQLAlchemy ORM, usando la nueva ruta para declarative_base
 from sqlalchemy import create_engine, Column, Integer, String
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 # ——— Configuración básica ———
 app = Flask(__name__)
 app.secret_key = 'tu_clave_secreta'
 
 # ——— Alpha Vantage ———
-ALPHA_API_KEY = 'TU_API_KEY'   # <<— reemplaza con tu key de Alpha Vantage
+ALPHA_API_KEY = 'TU_API_KEY'   # <<— reemplaza con tu clave de Alpha Vantage
 AV_URL        = 'https://www.alphavantage.co/query'
 # Rate limit free: 5 llamadas/minuto, 500 llamadas/día
 
@@ -26,29 +37,32 @@ class User(Base):
     email    = Column(String, unique=True, nullable=False)
     password = Column(String, nullable=False)
 
+# Crear la tabla si no existe
 Base.metadata.create_all(engine)
+
+# Inserta usuario de prueba si la tabla está vacía
 with SessionLocal() as db:
     if db.query(User).count() == 0:
         db.add(User(email='user@test.com', password='password123'))
         db.commit()
-        print("Usuario de prueba creado: user@test.com / password123")
+        print("Usuario de prueba creado → user@test.com / password123")
 
-# ——— Función para descargar y graficar ———
+# ——— Función para descargar datos y generar gráfica ———
 def fetch_and_plot_av(ticker):
-    # Usa el endpoint diario gratuito
+    # Llama al endpoint TIME_SERIES_DAILY (gratuito)
     params = {
-        'function':   'TIME_SERIES_DAILY',    # o 'TIME_SERIES_DAILY_ADJUSTED'
+        'function':   'TIME_SERIES_DAILY',
         'symbol':     ticker,
-        'outputsize': 'compact',              # últimos ~100 días
+        'outputsize': 'compact',   # últimos ~100 días
         'apikey':     ALPHA_API_KEY
     }
     resp = requests.get(AV_URL, params=params)
     data = resp.json()
 
-    # Manejo de error
+    # Manejo de errores
     if 'Time Series (Daily)' not in data:
-        error_msg = data.get('Note') or data.get('Error Message') or data
-        raise ValueError(f"AlphaVantage error: {error_msg}")
+        msg = data.get('Note') or data.get('Error Message') or data
+        raise ValueError(f"AlphaVantage error: {msg}")
 
     # Construye DataFrame
     ts = data['Time Series (Daily)']
@@ -56,25 +70,26 @@ def fetch_and_plot_av(ticker):
     df.index = pd.to_datetime(df.index)
     df.sort_index(inplace=True)
 
-    # Rendimiento diario: ln(Close_t / Close_{t-1})
-    # Si usas DAILY_ADJUSTED, reemplaza '4. close' por '5. adjusted close'
+    # Calcula rendimiento diario: ln(Close_t / Close_{t-1})
     df['Rendimiento'] = np.log(df['4. close'] / df['4. close'].shift(1))
     df.dropna(inplace=True)
 
-    # Gráfica
+    # Genera y guarda gráfica con nombre único para evitar colisiones
     plt.figure(figsize=(10,5))
     df['Rendimiento'].plot(title=f'Rendimiento diario de {ticker}')
     plt.xlabel('Fecha')
     plt.ylabel('Rt')
 
     os.makedirs('static', exist_ok=True)
-    img_name = f'{ticker}_rend.png'
-    plt.savefig(os.path.join('static', img_name))
+    timestamp = int(time.time())
+    img_name = f'{ticker}_rend_{timestamp}.png'
+    img_path = os.path.join('static', img_name)
+    plt.savefig(img_path)
     plt.close()
 
     return img_name
 
-# ——— Rutas Flask ———
+# ——— Rutas de la aplicación ———
 @app.route('/', methods=['GET','POST'])
 def login():
     error = None
@@ -94,7 +109,7 @@ def login():
 def consulta():
     if 'user' not in session:
         return redirect('/')
-    error = None
+    error     = None
     resultado = None
 
     if request.method == 'POST':
