@@ -6,23 +6,29 @@ import requests
 import numpy as np
 import pandas as pd
 
-# Forzar backend no interactivo de Matplotlib
+# 1) Forzar backend no interactivo de Matplotlib
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from flask import Flask, render_template, request, redirect, session
-
-# SQLAlchemy ORM
 from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-# ——— Configuración básica ———
-app = Flask(__name__)
+# ——— Rutas absolutas para static y templates ———
+BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
+STATIC_DIR   = os.path.join(BASE_DIR, 'static')
+TEMPLATE_DIR = os.path.join(BASE_DIR, 'templates')
+
+app = Flask(
+    __name__,
+    static_folder=STATIC_DIR,
+    template_folder=TEMPLATE_DIR
+)
 app.secret_key = 'tu_clave_secreta'
 
-# ——— Alpha Vantage ———
-ALPHA_API_KEY = 'TU_API_KEY'
+# ——— Configuración Alpha Vantage ———
+ALPHA_API_KEY = 'TU_API_KEY'   # ← reemplaza con tu clave de Alpha Vantage
 AV_URL        = 'https://www.alphavantage.co/query'
 
 # ——— ORM y Base de datos ———
@@ -36,16 +42,17 @@ class User(Base):
     email    = Column(String, unique=True, nullable=False)
     password = Column(String, nullable=False)
 
+# Crear tablas
 Base.metadata.create_all(engine)
 
-# Inserta usuario de prueba si la tabla está vacía
+# Usuario de prueba
 with SessionLocal() as db:
     if db.query(User).count() == 0:
         db.add(User(email='user@test.com', password='password123'))
         db.commit()
         print("Usuario de prueba creado → user@test.com / password123")
 
-# ——— Función para datos y gráfica ———
+# ——— Función para descargar datos y graficar ———
 def fetch_and_plot_av(ticker):
     params = {
         'function':   'TIME_SERIES_DAILY',
@@ -68,21 +75,23 @@ def fetch_and_plot_av(ticker):
     df['Rendimiento'] = np.log(df['4. close'] / df['4. close'].shift(1))
     df.dropna(inplace=True)
 
+    # Gráfica
     plt.figure(figsize=(10,5))
     df['Rendimiento'].plot(title=f'Rendimiento diario de {ticker}')
     plt.xlabel('Fecha')
     plt.ylabel('Rt')
 
-    os.makedirs('static', exist_ok=True)
+    # Guardar imagen en STATIC_DIR
+    os.makedirs(STATIC_DIR, exist_ok=True)
     timestamp = int(time.time())
-    img_name = f'{ticker}_rend_{timestamp}.png'
-    plt.savefig(os.path.join('static', img_name))
+    img_name  = f'{ticker}rend{timestamp}.png'
+    img_path  = os.path.join(STATIC_DIR, img_name)
+    plt.savefig(img_path)
     plt.close()
 
     return img_name
 
 # ——— Rutas de la aplicación ———
-
 @app.route('/', methods=['GET','POST'])
 def login():
     error = None
