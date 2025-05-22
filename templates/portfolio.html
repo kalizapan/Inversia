@@ -1,32 +1,20 @@
+<!-- templates/portfolio.html -->
 {% extends 'base.html' %}
-
 {% block title %}Mi Portafolio · Inversia{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
   <div class="col-md-8">
-
+    <!-- Agregar nuevo ticker -->
     <div class="card shadow-sm mb-4">
       <div class="card-body">
         <h3 class="card-title">Mi Portafolio</h3>
-
-        <form
-          method="POST"
-          action="{{ url_for('add_portfolio') }}"
-          class="row g-3 needs-validation mb-4"
-          novalidate
-        >
+        <form method="POST" action="{{ url_for('add_portfolio') }}"
+              class="row g-3 needs-validation mb-4" novalidate>
           <div class="col-auto flex-grow-1">
-            <input
-              type="text"
-              class="form-control"
-              name="ticker"
-              placeholder="Ticker a agregar (Ej: MSFT)"
-              required
-            >
-            <div class="invalid-feedback">
-              Ingresa un ticker válido.
-            </div>
+            <input type="text" name="ticker" class="form-control"
+                   placeholder="Ticker (Ej: MSFT)" required>
+            <div class="invalid-feedback">Ingresa un ticker válido.</div>
           </div>
           <div class="col-auto">
             <button type="submit" class="btn btn-info">
@@ -38,28 +26,45 @@
         {% if error %}
           <div class="alert alert-warning">{{ error }}</div>
         {% endif %}
-
         {% if tickers %}
-          <p><strong>Activos en tu portafolio:</strong> {{ tickers|join(', ') }}</p>
+          <p><strong>Activos:</strong> {{ tickers|join(', ') }}</p>
         {% else %}
-          <p class="text-muted">Tu portafolio está vacío.</p>
+          <p class="text-muted">Portafolio vacío.</p>
         {% endif %}
       </div>
     </div>
 
+    <!-- Gráfica consolidada -->
     {% if resultado %}
-      <div class="card shadow-sm">
-        <div class="card-body text-center">
-          <h5 class="card-title">Rendimiento Consolidado</h5>
-          <img
-            src="{{ url_for('static', filename=resultado) }}"
-            class="img-fluid rounded"
-            alt="Rendimiento del Portafolio"
-          >
-        </div>
+    <div class="card shadow-sm mb-4">
+      <div class="card-body text-center">
+        <h5 class="card-title">Rendimiento Consolidado</h5>
+        <img src="{{ url_for('static', filename=resultado) }}" class="img-fluid rounded">
       </div>
-    {% endif %}
+    </div>
 
+    <!-- Compartir por correo -->
+    <div class="card shadow-sm mb-4">
+      <div class="card-body">
+        <h5 class="card-title">Compartir por correo</h5>
+        {% if message %}
+          <div class="alert alert-info">{{ message }}</div>
+        {% endif %}
+        <form method="POST" class="row g-3 needs-validation" novalidate>
+          <div class="col-auto flex-grow-1">
+            <input type="email" name="email" class="form-control"
+                   placeholder="Destinatario" required>
+            <div class="invalid-feedback">Ingresa un correo válido.</div>
+          </div>
+          <div class="col-auto">
+            <button type="submit" class="btn btn-primary">
+              <i class="fa-solid fa-paper-plane"></i> Enviar PDF
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

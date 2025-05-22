@@ -11,28 +11,127 @@
           <div class="alert alert-warning">{{ error }}</div>
         {% endif %}
         <form method="POST" class="needs-validation" novalidate>
+          <!-- Nombre -->
+          <div class="mb-3">
+            <label for="first_name" class="form-label">Nombre</label>
+            <input
+              type="text"
+              class="form-control"
+              id="first_name"
+              name="first_name"
+              placeholder="Tu nombre"
+              required
+            >
+            <div class="invalid-feedback">
+              Ingresa tu nombre.
+            </div>
+          </div>
+          <!-- Apellidos -->
+          <div class="mb-3">
+            <label for="last_name" class="form-label">Apellidos</label>
+            <input
+              type="text"
+              class="form-control"
+              id="last_name"
+              name="last_name"
+              placeholder="Tus apellidos"
+              required
+            >
+            <div class="invalid-feedback">
+              Ingresa tus apellidos.
+            </div>
+          </div>
+          <!-- Motivo -->
+          <div class="mb-3">
+            <label for="reason" class="form-label">Motivo</label>
+            <select
+              class="form-select"
+              id="reason"
+              name="reason"
+              required
+            >
+              <option value="" disabled selected>Selecciona...</option>
+              <option value="Inversión">Inversión</option>
+              <option value="Educativo">Educativo</option>
+              <option value="Profesional">Profesional</option>
+            </select>
+            <div class="invalid-feedback">
+              Selecciona un motivo.
+            </div>
+          </div>
+          <!-- Institución -->
+          <div class="mb-3">
+            <label for="institution" class="form-label">Institución</label>
+            <input
+              type="text"
+              class="form-control"
+              id="institution"
+              name="institution"
+              placeholder="Tu institución"
+              required
+            >
+            <div class="invalid-feedback">
+              Ingresa tu institución.
+            </div>
+          </div>
+          <!-- Email -->
           <div class="mb-3">
             <label for="email" class="form-label">Correo electrónico</label>
-            <input type="email" class="form-control" id="email" name="email"
-                   placeholder="tú@ejemplo.com" required>
-            <div class="invalid-feedback">Ingresa un correo válido.</div>
+            <input
+              type="email"
+              class="form-control"
+              id="email"
+              name="email"
+              placeholder="tú@ejemplo.com"
+              required
+              pattern="^[\w\.-]+@[\w\.-]+\.\w+$"
+            >
+            <div class="invalid-feedback">
+              Ingresa un correo válido.
+            </div>
           </div>
+          <!-- Contraseña -->
           <div class="mb-3">
             <label for="password" class="form-label">Contraseña</label>
-            <input type="password" class="form-control" id="password" name="password"
-                   placeholder="********" required>
-            <div class="invalid-feedback">La contraseña es obligatoria.</div>
+            <input
+              type="password"
+              class="form-control"
+              id="password"
+              name="password"
+              placeholder="Mín 8 char., mayúsc, minúsc, número y símbolo"
+              required
+              pattern="(?=.[a-z])(?=.[A-Z])(?=.\d)(?=.\W).{8,}"
+            >
+            <div class="invalid-feedback">
+              Debe tener mínimo 8 caracteres, una mayúscula, una minúscula, un número y un símbolo.
+            </div>
           </div>
           <button type="submit" class="btn btn-success w-100">
             <i class="fa-solid fa-user-plus"></i> Registrarme
           </button>
         </form>
         <p class="text-center mt-3 mb-0">
-          ¿Ya tienes cuenta?
-          <a href="{{ url_for('login') }}">Inicia sesión</a>
+          ¿Ya tienes cuenta? <a href="{{ url_for('login') }}">Inicia sesión</a>
         </p>
       </div>
     </div>
   </div>
 </div>
+
+<script>
+// Bootstrap form validation
+(() => {
+  'use strict';
+  const forms = document.querySelectorAll('.needs-validation');
+  Array.from(forms).forEach(form => {
+    form.addEventListener('submit', event => {
+      if (!form.checkValidity()) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      form.classList.add('was-validated');
+    }, false);
+  });
+})();
+</script>
 {% endblock %}

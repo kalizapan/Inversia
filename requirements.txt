@@ -2,6 +2,6 @@ Flask
 requests
 pandas
 numpy
-yfinance
 matplotlib
 sqlalchemy
+reportlab
