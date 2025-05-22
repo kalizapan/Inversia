@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+
 {% block title %}Consulta · Inversia{% endblock %}
 
 {% block content %}
@@ -6,12 +7,22 @@
   <div class="col-md-8">
     <div class="card shadow-sm border-0 mb-4">
       <div class="card-body p-4">
-        <h3 class="card-title mb-4"><i class="fa-solid fa-chart-line"></i> Consulta de Stock</h3>
+        <h3 class="card-title mb-4">
+          <i class="fa-solid fa-chart-line"></i> Consulta de Stock
+        </h3>
         <form method="POST" class="row g-3 needs-validation" novalidate>
           <div class="col-auto flex-grow-1">
-            <input type="text" class="form-control" name="ticker" placeholder="Ej: AAPL"
-                   required autofocus>
-            <div class="invalid-feedback">Ingresa un ticker válido.</div>
+            <input
+              type="text"
+              class="form-control"
+              name="ticker"
+              placeholder="Ej: AAPL"
+              required
+              autofocus
+            >
+            <div class="invalid-feedback">
+              Ingresa un ticker válido.
+            </div>
           </div>
           <div class="col-auto">
             <button type="submit" class="btn btn-primary mb-3">
@@ -28,12 +39,19 @@
 
     {% if resultado %}
     <div class="card shadow-sm border-0">
-      <div class="card-header bg-primary text-white">
-        <h5 class="mb-0">Gráfica de Rendimiento</h5>
-      </div>
       <div class="card-body text-center">
-        <img src="{{ url_for('static', filename=resultado) }}" class="img-fluid rounded"
-             alt="Rendimiento de {{ resultado.split('_')[0] }}">
+        <img
+          src="{{ url_for('static', filename=resultado) }}"
+          class="img-fluid rounded"
+          alt="Rendimiento de {{ resultado.split('_')[0] }}"
+        >
+        <br><br>
+        <form method="POST" action="{{ url_for('add_portfolio', ticker=ticker) }}">
+          <button class="btn btn-success">
+            <i class="fa-solid fa-plus"></i>
+            Agregar {{ ticker }} al Portafolio
+          </button>
+        </form>
       </div>
     </div>
     {% endif %}
