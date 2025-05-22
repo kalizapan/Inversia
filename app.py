@@ -6,14 +6,20 @@ import requests
 import numpy as np
 import pandas as pd
 
-# Matplotlib sin GUI
+# Forzar backend no interactivo de Matplotlib
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-# Generación de PDF
-from reportlab.pdfgen import canvas
+# Generación de PDF con Platypus
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Image as RLImage,
+    Table, TableStyle, PageBreak
+)
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.lib.units import inch
 
 # Envío de email vía SMTP
 import smtplib
@@ -88,7 +94,6 @@ def fetch_and_plot_td(ticker):
     df['date']     = pd.to_datetime(df['datetime'])
     df.set_index('date', inplace=True)
     df.sort_index(inplace=True)
-
     df['Rendimiento'] = np.log(df['close'] / df['close'].shift(1))
     df.dropna(inplace=True)
 
@@ -118,10 +123,10 @@ def plot_portfolio(user_id):
             'apikey':     TD_API_KEY,
             'format':     'JSON'
         }
-        data = requests.get(TD_URL, params=params).json()
-        if 'values' not in data:
-            raise ValueError(f"Twelve Data error for {t}: {data.get('message')}")
-        df_t = pd.DataFrame(data['values'])
+        r = requests.get(TD_URL, params=params).json()
+        if 'values' not in r:
+            raise ValueError(f"Twelve Data error for {t}: {r.get('message')}")
+        df_t = pd.DataFrame(r['values'])
         df_t['close']    = df_t['close'].astype(float)
         df_t['date']     = pd.to_datetime(df_t['datetime'])
         df_t.set_index('date', inplace=True)
@@ -145,21 +150,42 @@ def plot_portfolio(user_id):
 def generate_portfolio_pdf(user_id):
     img, tickers = plot_portfolio(user_id)
     pdf_path = os.path.join(STATIC_DIR, f'portfolio_{user_id}_{int(time.time())}.pdf')
-    c = canvas.Canvas(pdf_path, pagesize=letter)
-    w, h = letter
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(50, h-50, "Portafolio de Inversia")
-    c.setFont("Helvetica", 12)
-    y = h-80
+    doc = SimpleDocTemplate(
+        pdf_path,
+        pagesize=letter,
+        rightMargin=50, leftMargin=50,
+        topMargin=50, bottomMargin=50
+    )
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(
+        name='CenteredTitle',
+        parent=styles['Heading1'],
+        alignment=1, fontSize=18, spaceAfter=12
+    ))
+    flowables = []
+    # Título
+    flowables.append(Paragraph("Portafolio de Inversia", styles['CenteredTitle']))
+    flowables.append(Spacer(1, 0.2 * inch))
+    # Tabla de tickers
+    data = [['Activo']]
     for t in tickers:
-        c.drawString(60, y, f"• {t}")
-        y -= 20
-        if y < 150:
-            c.showPage()
-            y = h-50
-    c.showPage()
-    c.drawImage(os.path.join(STATIC_DIR, img), 50, 200, width=500, height=300)
-    c.save()
+        data.append([t])
+    table = Table(data, colWidths=[4 * inch])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2a9d8f')),
+        ('TEXTCOLOR',  (0, 0), (-1, 0), colors.white),
+        ('ALIGN',      (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME',   (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE',   (0, 0), (-1, 0), 14),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.whitesmoke),
+        ('GRID',       (0, 0), (-1, -1), 0.5, colors.gray),
+    ]))
+    flowables.append(table)
+    flowables.append(PageBreak())
+    # Gráfica
+    flowables.append(RLImage(os.path.join(STATIC_DIR, img), width=6 * inch, height=3 * inch))
+    doc.build(flowables)
     return pdf_path
 
 def send_portfolio_email(to_email, pdf_path):
@@ -169,9 +195,12 @@ def send_portfolio_email(to_email, pdf_path):
     msg["To"]      = to_email
     msg.set_content("Adjunto encontrarás el PDF con tu portafolio.")
     with open(pdf_path, "rb") as f:
-        data = f.read()
-    msg.add_attachment(data, maintype="application", subtype="pdf", filename=os.path.basename(pdf_path))
-
+        msg.add_attachment(
+            f.read(),
+            maintype="application",
+            subtype="pdf",
+            filename=os.path.basename(pdf_path)
+        )
     with smtplib.SMTP("smtp.gmail.com", 587) as smtp:
         smtp.starttls()
         smtp.login(EMAIL_USER, EMAIL_PASS)
@@ -246,7 +275,13 @@ def portfolio():
         img, tickers = plot_portfolio(session['user_id'])
     except Exception as e:
         return render_template('portfolio.html', error=str(e))
-    return render_template('portfolio.html', error=None, resultado=img, tickers=tickers, message=message)
+    return render_template(
+        'portfolio.html',
+        error=None,
+        resultado=img,
+        tickers=tickers,
+        message=message
+    )
 
 @app.route('/logout')
 def logout():
