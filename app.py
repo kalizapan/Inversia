@@ -4,6 +4,7 @@ import re
 import requests
 import numpy as np
 import pandas as pd
+from werkzeug.security import generate_password_hash, check_password_hash
 
 # Matplotlib sin GUI
 import matplotlib
@@ -56,14 +57,15 @@ SessionLocal = sessionmaker(bind=engine)
 
 class User(Base):
     __tablename__ = 'users'
-    id          = Column(Integer, primary_key=True)
-    email       = Column(String, unique=True, nullable=False)
-    password    = Column(String, nullable=False)
-    first_name  = Column(String, nullable=False)
-    last_name   = Column(String, nullable=False)
-    reason      = Column(String, nullable=False)     # Inversión, Educativo, Profesional
-    institution = Column(String, nullable=False)
-    portfolio   = relationship('PortfolioItem', back_populates='user')
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String, unique=True, nullable=False)
+    password = Column(String, nullable=False)
+    first_name = Column(String, nullable=False)
+    last_name = Column(String, nullable=False)
+    motivo = Column(String, nullable=False)
+    institucion = Column(String, nullable=False)
+
+    portfolio = relationship('PortfolioItem', back_populates='user')
 
 class PortfolioItem(Base):
     __tablename__ = 'portfolio_items'
@@ -79,15 +81,14 @@ with SessionLocal() as db:
     if db.query(User).count() == 0:
         db.add(User(
             email='user@test.com',
-            password='Password1!',
+            password=generate_password_hash('Password1!'),
             first_name='Usuario',
             last_name='Prueba',
-            reason='Educativo',
-            institution='Universidad X'
+            motivo='Educativo',
+            institucion='Universidad X'
         ))
         db.commit()
 
-# — funciones de datos y gráficas (igual que antes) —
 def fetch_and_plot_td(ticker):
     params = {
         'symbol':     ticker,
@@ -142,7 +143,6 @@ def plot_portfolio(user_id):
     return img, tickers
 
 def generate_portfolio_pdf(user_id):
-    # obtén info de usuario
     with SessionLocal() as db:
         user = db.query(User).get(user_id)
     img, tickers = plot_portfolio(user_id)
@@ -157,7 +157,7 @@ def generate_portfolio_pdf(user_id):
         Paragraph("Portafolio de Inversia", styles['CenteredTitle']),
         Spacer(1,0.2*inch),
         Paragraph(f"Nombre: {user.first_name} {user.last_name}", styles['Normal']),
-        Paragraph(f"Institución: {user.institution}", styles['Normal']),
+        Paragraph(f"Institución: {user.institucion}", styles['Normal']),
         Spacer(1,0.3*inch)
     ]
     data = [['Activo']] + [[t] for t in tickers]
@@ -197,46 +197,47 @@ def login():
     if request.method=='POST':
         e,p = request.form['email'], request.form['password']
         with SessionLocal() as db:
-            u=db.query(User).filter_by(email=e,password=p).first()
-        if u:
-            session['user_id']=u.id
-            return redirect('/consulta')
+            u = db.query(User).filter_by(email=e).first()
+            if u and check_password_hash(u.password, p):
+                session['user_id'] = u.id
+                return redirect('/consulta')
         error='Credenciales inválidas'
     return render_template('login.html', error=error)
 
-@app.route('/register', methods=['GET','POST'])
+@app.route('/register', methods=['GET', 'POST'])
 def register():
-    error=None
-    if request.method=='POST':
-        email=request.form['email'].strip()
-        pwd  =request.form['password']
-        fn   =request.form['first_name'].strip()
-        ln   =request.form['last_name'].strip()
-        reason =request.form['reason']
-        inst =request.form['institution'].strip()
-        # validar email
-        if not re.match(r'^[\w\.-]+@[\w\.-]+\.\w+$', email):
-            error='Correo inválido'; return render_template('register.html',error=error)
-        # validar pwd
-        if not re.match(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*\W).{8,}$', pwd):
-            error='Pwd debe tener ≥8 car., mayúsc., minúsc., número y símbolo.'
-            return render_template('register.html',error=error)
-        # validar nombres e institución
-        if not fn or not ln or not inst:
-            error='Todos los campos son obligatorios.'
-            return render_template('register.html',error=error)
+    if request.method == 'POST':
+        email = request.form['email'].strip()
+        pwd = request.form['password']
+        first_name = request.form['first_name']
+        last_name = request.form['last_name']
+        motivo = request.form['reason']
+        institucion = request.form['institution']
+
+        if not all([email, pwd, first_name, last_name, motivo, institucion]):
+            return render_template('register.html', error='Todos los campos son obligatorios.')
+
+        if not re.fullmatch(r'(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}', pwd):
+            return render_template('register.html', error='La contraseña no cumple los requisitos.')
+
         with SessionLocal() as db:
             if db.query(User).filter_by(email=email).first():
-                error='Ya existe cuenta con ese correo.'
-            else:
-                db.add(User(
-                    email=email,password=pwd,
-                    first_name=fn,last_name=ln,
-                    reason=reason,institution=inst
-                ))
-                db.commit()
-                return redirect('/')
-    return render_template('register.html', error=error)
+                return render_template('register.html', error='Correo ya registrado.')
+
+            hashed = generate_password_hash(pwd)
+            nuevo_usuario = User(
+                email=email,
+                password=hashed,
+                first_name=first_name,
+                last_name=last_name,
+                motivo=motivo,
+                institucion=institucion
+            )
+            db.add(nuevo_usuario)
+            db.commit()
+            return redirect('/')
+
+    return render_template('register.html')
 
 @app.route('/consulta', methods=['GET','POST'])
 def consulta():

@@ -100,7 +100,7 @@
               name="password"
               placeholder="Mín 8 char., mayúsc, minúsc, número y símbolo"
               required
-              pattern="(?=.[a-z])(?=.[A-Z])(?=.\d)(?=.\W).{8,}"
+              pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}"
             >
             <div class="invalid-feedback">
               Debe tener mínimo 8 caracteres, una mayúscula, una minúscula, un número y un símbolo.
