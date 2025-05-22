@@ -5,6 +5,7 @@
 {% block content %}
 <div class="row justify-content-center">
   <div class="col-md-8">
+    <!-- Card de consulta -->
     <div class="card shadow-sm border-0 mb-4">
       <div class="card-body p-4">
         <h3 class="card-title mb-4">
@@ -37,16 +38,19 @@
       </div>
     </div>
 
+    <!-- Card de resultado y agregar al portafolio -->
     {% if resultado %}
     <div class="card shadow-sm border-0">
       <div class="card-body text-center">
         <img
           src="{{ url_for('static', filename=resultado) }}"
           class="img-fluid rounded"
-          alt="Rendimiento de {{ resultado.split('_')[0] }}"
+          alt="Rendimiento de {{ ticker }}"
         >
         <br><br>
-        <form method="POST" action="{{ url_for('add_portfolio', ticker=ticker) }}">
+        <form method="POST" action="{{ url_for('add_portfolio') }}">
+          <!-- Campo oculto para enviar el ticker -->
+          <input type="hidden" name="ticker" value="{{ ticker }}">
           <button class="btn btn-success">
             <i class="fa-solid fa-plus"></i>
             Agregar {{ ticker }} al Portafolio
