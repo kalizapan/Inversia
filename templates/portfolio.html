@@ -1,15 +1,65 @@
 {% extends 'base.html' %}
+
 {% block title %}Mi Portafolio · Inversia{% endblock %}
+
 {% block content %}
-<div class="card shadow-sm">
-  <div class="card-body">
-    <h3 class="card-title mb-3">Mi Portafolio</h3>
-    {% if error %}
-      <div class="alert alert-warning">{{ error }}</div>
-    {% else %}
-      <p><strong>Activos:</strong> {{ tickers|join(', ') }}</p>
-      <img src="{{ url_for('static', filename=resultado) }}" class="img-fluid rounded">
+<div class="row justify-content-center">
+  <div class="col-md-8">
+
+    <div class="card shadow-sm mb-4">
+      <div class="card-body">
+        <h3 class="card-title">Mi Portafolio</h3>
+
+        <form
+          method="POST"
+          action="{{ url_for('add_portfolio') }}"
+          class="row g-3 needs-validation mb-4"
+          novalidate
+        >
+          <div class="col-auto flex-grow-1">
+            <input
+              type="text"
+              class="form-control"
+              name="ticker"
+              placeholder="Ticker a agregar (Ej: MSFT)"
+              required
+            >
+            <div class="invalid-feedback">
+              Ingresa un ticker válido.
+            </div>
+          </div>
+          <div class="col-auto">
+            <button type="submit" class="btn btn-info">
+              <i class="fa-solid fa-plus"></i> Agregar
+            </button>
+          </div>
+        </form>
+
+        {% if error %}
+          <div class="alert alert-warning">{{ error }}</div>
+        {% endif %}
+
+        {% if tickers %}
+          <p><strong>Activos en tu portafolio:</strong> {{ tickers|join(', ') }}</p>
+        {% else %}
+          <p class="text-muted">Tu portafolio está vacío.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if resultado %}
+      <div class="card shadow-sm">
+        <div class="card-body text-center">
+          <h5 class="card-title">Rendimiento Consolidado</h5>
+          <img
+            src="{{ url_for('static', filename=resultado) }}"
+            class="img-fluid rounded"
+            alt="Rendimiento del Portafolio"
+          >
+        </div>
+      </div>
     {% endif %}
+
   </div>
 </div>
 {% endblock %}
