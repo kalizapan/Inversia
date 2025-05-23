@@ -480,6 +480,25 @@ def portfolio():
         message=msg
     )
 
+@app.route('/delete', methods=['POST'])
+def delete_portfolio():
+    if 'user_id' not in session:
+        return redirect('/')
+    # Tomamos el ticker a eliminar
+    raw = request.form.get('ticker', '')
+    ticker = raw.strip().upper()
+    if ticker:
+        with SessionLocal() as db:
+            item = (
+                db.query(PortfolioItem)
+                  .filter_by(user_id=session['user_id'], ticker=ticker)
+                  .first()
+            )
+            if item:
+                db.delete(item)
+                db.commit()
+    return redirect('/portfolio')
+
 @app.route('/logout')
 def logout():
     session.clear()

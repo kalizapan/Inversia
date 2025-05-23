@@ -34,10 +34,27 @@
           <div class="alert alert-warning">{{ error }}</div>
         {% endif %}
         {% if tickers %}
-          <p><strong>Activos:</strong> {{ tickers | join(', ') }}</p>
-        {% else %}
-          <p class="text-muted">Portafolio vacío.</p>
-        {% endif %}
+        <ul class="list-group mb-4">
+          {% for t in tickers %}
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+              {{ t }}
+              <form method="POST" action="{{ url_for('delete_portfolio') }}">
+                <input type="hidden" name="ticker" value="{{ t }}">
+                <button
+                  type="submit"
+                  class="btn btn-sm btn-danger"
+                  title="Eliminar {{ t }}"
+                  onclick="return confirm('¿Seguro que quieres eliminar {{ t }}?');"
+                >
+                  <i class="fa-solid fa-trash"></i>
+                </button>
+              </form>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="text-muted">Portafolio vacío.</p>
+      {% endif %}
       </div>
     </div>
 
