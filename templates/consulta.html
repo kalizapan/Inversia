@@ -1,11 +1,10 @@
+<!-- templates/consulta.html -->
 {% extends 'base.html' %}
-
 {% block title %}Consulta · Inversia{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
   <div class="col-md-8">
-    <!-- Card de consulta -->
     <div class="card shadow-sm border-0 mb-4">
       <div class="card-body p-4">
         <h3 class="card-title mb-4">
@@ -15,15 +14,16 @@
           <div class="col-auto flex-grow-1">
             <input
               type="text"
-              class="form-control"
               name="ticker"
+              class="form-control"
               placeholder="Ej: AAPL"
               required
+              pattern="^(?!.*\s{2,}).*\S.*$"
+              maxlength="5"
+              title="No puede estar vacío, ni contener sólo espacios o doble espacio. Máx 5 caracteres."
               autofocus
             >
-            <div class="invalid-feedback">
-              Ingresa un ticker válido.
-            </div>
+            <div class="invalid-feedback">Ingresa un ticker válido.</div>
           </div>
           <div class="col-auto">
             <button type="submit" class="btn btn-primary mb-3">
@@ -31,14 +31,11 @@
             </button>
           </div>
         </form>
-
         {% if error %}
           <div class="alert alert-danger mt-3">{{ error }}</div>
         {% endif %}
       </div>
     </div>
-
-    <!-- Card de resultado y agregar al portafolio -->
     {% if resultado %}
     <div class="card shadow-sm border-0">
       <div class="card-body text-center">
@@ -49,11 +46,9 @@
         >
         <br><br>
         <form method="POST" action="{{ url_for('add_portfolio') }}">
-          <!-- Campo oculto para enviar el ticker -->
           <input type="hidden" name="ticker" value="{{ ticker }}">
           <button class="btn btn-success">
-            <i class="fa-solid fa-plus"></i>
-            Agregar {{ ticker }} al Portafolio
+            <i class="fa-solid fa-plus"></i> Agregar {{ ticker }}
           </button>
         </form>
       </div>

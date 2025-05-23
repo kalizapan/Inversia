@@ -1,3 +1,4 @@
+<!-- templates/login.html -->
 {% extends 'base.html' %}
 {% block title %}Iniciar Sesión · Inversia{% endblock %}
 
@@ -13,14 +14,32 @@
         <form method="POST" class="needs-validation" novalidate>
           <div class="mb-3">
             <label for="email" class="form-label">Correo electrónico</label>
-            <input type="email" class="form-control" id="email" name="email"
-                   placeholder="tú@ejemplo.com" required>
+            <input
+              type="email"
+              id="email"
+              name="email"
+              class="form-control"
+              placeholder="tú@ejemplo.com"
+              required
+              pattern="^(?!.*\s{2,}).*\S.*$"
+              maxlength="50"
+              title="No puede estar vacío, ni contener sólo espacios o doble espacio."
+            >
             <div class="invalid-feedback">Ingresa un correo válido.</div>
           </div>
           <div class="mb-3">
             <label for="password" class="form-label">Contraseña</label>
-            <input type="password" class="form-control" id="password" name="password"
-                   placeholder="********" required>
+            <input
+              type="password"
+              id="password"
+              name="password"
+              class="form-control"
+              placeholder="********"
+              required
+              pattern="^(?!.*\s{2,}).*\S.*$"
+              maxlength="64"
+              title="No puede estar vacío, ni contener sólo espacios o doble espacio."
+            >
             <div class="invalid-feedback">La contraseña es obligatoria.</div>
           </div>
           <button type="submit" class="btn btn-primary w-100">
@@ -28,8 +47,7 @@
           </button>
         </form>
         <p class="text-center mt-3 mb-0">
-          ¿No tienes cuenta?
-          <a href="{{ url_for('register') }}">Regístrate aquí</a>
+          ¿No tienes cuenta? <a href="{{ url_for('register') }}">Regístrate aquí</a>
         </p>
       </div>
     </div>

@@ -1,3 +1,4 @@
+<!-- templates/register.html -->
 {% extends 'base.html' %}
 {% block title %}Registro · Inversia{% endblock %}
 
@@ -16,38 +17,40 @@
             <label for="first_name" class="form-label">Nombre</label>
             <input
               type="text"
-              class="form-control"
               id="first_name"
               name="first_name"
+              class="form-control"
               placeholder="Tu nombre"
               required
+              pattern="^(?!.*\s{2,}).*\S.*$"
+              maxlength="30"
+              title="No puede estar vacío, ni contener sólo espacios o doble espacio."
             >
-            <div class="invalid-feedback">
-              Ingresa tu nombre.
-            </div>
+            <div class="invalid-feedback">Ingresa tu nombre correcto.</div>
           </div>
           <!-- Apellidos -->
           <div class="mb-3">
             <label for="last_name" class="form-label">Apellidos</label>
             <input
               type="text"
-              class="form-control"
               id="last_name"
               name="last_name"
+              class="form-control"
               placeholder="Tus apellidos"
               required
+              pattern="^(?!.*\s{2,}).*\S.*$"
+              maxlength="30"
+              title="No puede estar vacío, ni contener sólo espacios o doble espacio."
             >
-            <div class="invalid-feedback">
-              Ingresa tus apellidos.
-            </div>
+            <div class="invalid-feedback">Ingresa tus apellidos correctos.</div>
           </div>
           <!-- Motivo -->
           <div class="mb-3">
             <label for="reason" class="form-label">Motivo</label>
             <select
-              class="form-select"
               id="reason"
               name="reason"
+              class="form-select"
               required
             >
               <option value="" disabled selected>Selecciona...</option>
@@ -55,55 +58,56 @@
               <option value="Educativo">Educativo</option>
               <option value="Profesional">Profesional</option>
             </select>
-            <div class="invalid-feedback">
-              Selecciona un motivo.
-            </div>
+            <div class="invalid-feedback">Selecciona un motivo.</div>
           </div>
           <!-- Institución -->
           <div class="mb-3">
             <label for="institution" class="form-label">Institución</label>
             <input
               type="text"
-              class="form-control"
               id="institution"
               name="institution"
+              class="form-control"
               placeholder="Tu institución"
               required
+              pattern="^(?!.*\s{2,}).*\S.*$"
+              maxlength="50"
+              title="No puede estar vacío, ni contener sólo espacios o doble espacio."
             >
-            <div class="invalid-feedback">
-              Ingresa tu institución.
-            </div>
+            <div class="invalid-feedback">Ingresa tu institución.</div>
           </div>
           <!-- Email -->
           <div class="mb-3">
             <label for="email" class="form-label">Correo electrónico</label>
             <input
               type="email"
-              class="form-control"
               id="email"
               name="email"
+              class="form-control"
               placeholder="tú@ejemplo.com"
               required
-              pattern="^[\w\.-]+@[\w\.-]+\.\w+$"
+              pattern="^(?!.*\s{2,}).*\S.*$"
+              maxlength="50"
+              title="No puede estar vacío, ni contener sólo espacios o doble espacio."
             >
-            <div class="invalid-feedback">
-              Ingresa un correo válido.
-            </div>
+            <div class="invalid-feedback">Ingresa un correo válido.</div>
           </div>
           <!-- Contraseña -->
           <div class="mb-3">
             <label for="password" class="form-label">Contraseña</label>
             <input
               type="password"
-              class="form-control"
               id="password"
               name="password"
+              class="form-control"
               placeholder="Mín 8 char., mayúsc, minúsc, número y símbolo"
               required
-              pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}"
+              pattern="^(?!.*\s{2,}).*\S.*$"
+              maxlength="64"
+              title="No puede estar vacío, ni contener sólo espacios o doble espacio."
             >
             <div class="invalid-feedback">
-              Debe tener mínimo 8 caracteres, una mayúscula, una minúscula, un número y un símbolo.
+              La contraseña es obligatoria y no puede contener espacios consecutivos.
             </div>
           </div>
           <button type="submit" class="btn btn-success w-100">
@@ -117,21 +121,4 @@
     </div>
   </div>
 </div>
-
-<script>
-// Bootstrap form validation
-(() => {
-  'use strict';
-  const forms = document.querySelectorAll('.needs-validation');
-  Array.from(forms).forEach(form => {
-    form.addEventListener('submit', event => {
-      if (!form.checkValidity()) {
-        event.preventDefault();
-        event.stopPropagation();
-      }
-      form.classList.add('was-validated');
-    }, false);
-  });
-})();
-</script>
 {% endblock %}
