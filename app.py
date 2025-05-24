@@ -107,6 +107,18 @@ with SessionLocal() as db:
         ))
         db.commit()
 
+# Tipo de cambio desde frankfurter
+def get_exchange_rates(base='USD'):
+    try:
+        url = f'https://api.frankfurter.app/latest?from={base}&to=MXN,EUR,GBP,JPY'
+        r = requests.get(url)
+        data = r.json()
+        return data['rates']
+    except Exception as e:
+        print(f"[ERROR Frankfurter] {e}")
+        return {'MXN': 0, 'EUR': 0, 'GBP': 0, 'JPY': 0}
+
+
 def fetch_and_plot_td(ticker):
     """
     Consulta la API de TwelveData y dibuja el gráfico.
@@ -280,6 +292,39 @@ def generate_portfolio_pdf(user_id):
         )
     )
 
+    # 7) Agregar conversión de divisas usando último ticker
+    ultimo = tickers[-1]
+    params = {
+        'symbol': ultimo,
+        'interval': '1day',
+        'outputsize': 1,
+        'apikey': TD_API_KEY,
+        'format': 'JSON'
+    }
+    r = requests.get(TD_URL, params=params).json()
+    price = float(r['values'][0]['close'])
+    rates = get_exchange_rates()
+    conv_table = [['Divisa', 'Precio']]
+    for divisa in ['USD', 'MXN', 'EUR', 'GBP', 'JPY']:
+        mult = 1 if divisa == 'USD' else rates[divisa]
+        conv_table.append([divisa, f"{round(price * mult, 2):,.2f}"])
+
+    table2 = Table(conv_table, colWidths=[2*inch, 2*inch])
+    table2.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#264653')),
+        ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+        ('ALIGN',(0,0),(-1,-1),'CENTER'),
+        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+        ('FONTSIZE',(0,0),(-1,0),12),
+        ('BACKGROUND',(0,1),(-1,-1),colors.whitesmoke),
+        ('GRID',(0,0),(-1,-1),0.5,colors.gray),
+    ]))
+    flowables += [
+        Spacer(1, 0.3*inch),
+        Paragraph("Conversión de divisas", styles['Heading2']),
+        table2
+    ]
+
     # 7) Generar PDF
     doc.build(flowables)
     return pdf_path
@@ -390,16 +435,20 @@ def register():
             return redirect('/')
     return render_template('register.html')
 
-@app.route('/consulta', methods=['GET','POST'])
+@app.route('/consulta', methods=['GET', 'POST'])
 def consulta():
     if 'user_id' not in session:
         return redirect('/')
+    
     error = None
     resultado = None
     ticker = ''
+    conversiones = {}
+    
     if request.method == 'POST':
         raw = request.form.get('ticker', '')
         ticker = raw.strip().upper()
+        
         if not ticker:
             error = 'El ticker es obligatorio.'
         elif len(ticker) > MAX_LEN['ticker']:
@@ -409,16 +458,41 @@ def consulta():
         else:
             try:
                 resultado = fetch_and_plot_td(ticker)
+
+                # Obtener precio más reciente (USD)
+                params = {
+                    'symbol': ticker,
+                    'interval': '1day',
+                    'outputsize': 1,
+                    'apikey': TD_API_KEY,
+                    'format': 'JSON'
+                }
+                r = requests.get(TD_URL, params=params).json()
+                price = float(r['values'][0]['close'])
+
+                # Obtener tasas de cambio
+                rates = get_exchange_rates()
+                conversiones = {
+                    'USD': round(price, 2),
+                    'MXN': round(price * rates['MXN'], 2),
+                    'EUR': round(price * rates['EUR'], 2),
+                    'GBP': round(price * rates['GBP'], 2),
+                    'JPY': round(price * rates['JPY'], 2),
+                }
+
             except ValueError as ve:
                 error = str(ve)
             except Exception as e:
                 error = f"Error inesperado al consultar: {e}"
+
     return render_template(
         'consulta.html',
         error=error,
         resultado=resultado,
-        ticker=ticker
+        ticker=ticker,
+        conversiones=conversiones
     )
+
 
 @app.route('/add', methods=['POST'])
 def add_portfolio():
