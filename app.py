@@ -479,29 +479,38 @@ def send_reset_email(to_email, code):
 @app.route('/forgot_password', methods=['GET','POST'])
 def forgot_password():
     error = None
-    message = None
     if request.method == 'POST':
         email = request.form['email'].strip().lower()
-        if not email or len(email)>MAX_LEN['email'] or re.search(r'\s{2,}', email):
+
+        # 1) Validación básica del formato de correo
+        if not email or len(email) > MAX_LEN['email'] or re.search(r'\s{2,}', email):
             error = 'Correo inválido.'
-        else:
-            with SessionLocal() as db:
-                user = db.query(User).filter_by(email=email).first()
-                if not user:
-                    error = 'Correo no registrado.'
-                else:
-                    code = f"{random.randint(0,999999):06d}"
-                    # borramos cualquier código previo
-                    db.query(PasswordReset).filter_by(user_id=user.id).delete()
-                    db.add(PasswordReset(user_id=user.id, code=code))
-                    db.commit()
-                    try:
-                        send_reset_email(email, code)
-                        message = 'Se ha enviado un código a tu correo.'
-                    except Exception as e:
-                        error = str(e)
-                        return render_template('forgot_password.html', error=error, message=message)
+            return render_template('forgot_password.html', error=error)
+
+        # 2) Comprobar si el correo existe en la BD
+        with SessionLocal() as db:
+            user = db.query(User).filter_by(email=email).first()
+            if not user:
+                error = 'Este correo no está registrado.'
+                return render_template('forgot_password.html', error=error)
+
+            # 3) Generar y guardar código único de 6 dígitos
+            code = f"{random.randint(0, 999999):06d}"
+            db.query(PasswordReset).filter_by(user_id=user.id).delete()
+            db.add(PasswordReset(user_id=user.id, code=code))
+            db.commit()
+
+        # 4) Enviar el correo con el código
+        try:
+            send_reset_email(email, code)
+        except Exception as e:
+            error = str(e)
+            return render_template('forgot_password.html', error=error)
+
+        # 5) Redirigir al formulario donde se ingresa el código
         return redirect(url_for('reset_code', email=email))
+
+    # GET
     return render_template('forgot_password.html', error=error)
 
 @app.route('/reset_code', methods=['GET','POST'])
