@@ -1,26 +1,21 @@
+<!-- templates/portfolio.html -->
 {% extends 'base.html' %}
 {% block title %}Mi Portafolio · Inversia{% endblock %}
-
 {% block content %}
 <div class="row justify-content-center">
   <div class="col-md-8">
-    <!-- Agregar nuevo ticker -->
+
+    <!-- 1) Añadir tickers -->
     <div class="card shadow-sm mb-4">
       <div class="card-body">
         <h3 class="card-title">Mi Portafolio</h3>
         <form method="POST" action="{{ url_for('add_portfolio') }}"
               class="row g-3 needs-validation mb-4" novalidate>
           <div class="col-auto flex-grow-1">
-            <input
-              type="text"
-              name="ticker"
-              class="form-control"
-              placeholder="Ticker (Ej: MSFT)"
-              required
-              pattern="^(?!.*\s{2,}).*\S.*$"
-              maxlength="5"
-              title="Máx. 5 caracteres, no espacios dobles ni solo espacios."
-            >
+            <input type="text" name="ticker" class="form-control"
+                   placeholder="Ticker (Ej: MSFT)" required
+                   pattern="^(?!.*\s{2,}).*\S.*$" maxlength="5"
+                   title="Máx 5 caracteres sin espacios dobles.">
             <div class="invalid-feedback">Ingresa un ticker válido.</div>
           </div>
           <div class="col-auto">
@@ -29,37 +24,32 @@
             </button>
           </div>
         </form>
-
         {% if error %}
           <div class="alert alert-warning">{{ error }}</div>
         {% endif %}
         {% if tickers %}
-        <ul class="list-group mb-4">
-          {% for t in tickers %}
-            <li class="list-group-item d-flex justify-content-between align-items-center">
-              {{ t }}
-              <form method="POST" action="{{ url_for('delete_portfolio') }}">
-                <input type="hidden" name="ticker" value="{{ t }}">
-                <button
-                  type="submit"
-                  class="btn btn-sm btn-danger"
-                  title="Eliminar {{ t }}"
-                  onclick="return confirm('¿Seguro que quieres eliminar {{ t }}?');"
-                >
-                  <i class="fa-solid fa-trash"></i>
-                </button>
-              </form>
-            </li>
-          {% endfor %}
-        </ul>
-      {% else %}
-        <p class="text-muted">Portafolio vacío.</p>
-      {% endif %}
+          <ul class="list-group mb-4">
+            {% for t in tickers %}
+              <li class="list-group-item d-flex justify-content-between align-items-center">
+                {{ t }}
+                <form method="POST" action="{{ url_for('delete_portfolio') }}">
+                  <input type="hidden" name="ticker" value="{{ t }}">
+                  <button type="submit" class="btn btn-sm btn-danger"
+                          onclick="return confirm('¿Eliminar {{ t }}?');">
+                    <i class="fa-solid fa-trash"></i>
+                  </button>
+                </form>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="text-muted">Portafolio vacío.</p>
+        {% endif %}
       </div>
     </div>
 
     {% if consolidated and individual %}
-    <!-- Gráfica consolidada -->
+    <!-- 2) Gráfica consolidada -->
     <div class="card shadow-sm mb-4">
       <div class="card-body text-center">
         <h5 class="card-title">Rendimiento Consolidado</h5>
@@ -67,7 +57,8 @@
              class="img-fluid rounded" alt="Consolidado">
       </div>
     </div>
-    <!-- Gráfica individual -->
+
+    <!-- 3) Gráfica individual -->
     <div class="card shadow-sm mb-4">
       <div class="card-body text-center">
         <h5 class="card-title">Rendimiento por Activo</h5>
@@ -76,7 +67,33 @@
       </div>
     </div>
 
-    <!-- Compartir por correo -->
+    <!-- 4) Botón interpretar -->
+    <form method="POST" class="mb-4">
+      <input type="hidden" name="action" value="deepseek">
+      <button type="submit" class="btn btn-outline-secondary">
+        <i class="fa-solid fa-brain"></i> Generar interpretación experta
+      </button>
+    </form>
+
+    <!-- 5) Interpretación sólo si existe -->
+    {% if interp_cons %}
+    <div class="card shadow-sm border-0 mb-4">
+      <div class="card-body">
+        <h5 class="card-title">Interpretación experta (Consolidado)</h5>
+        <p>{{ interp_cons }}</p>
+      </div>
+    </div>
+    {% endif %}
+    {% if interp_ind %}
+    <div class="card shadow-sm border-0 mb-4">
+      <div class="card-body">
+        <h5 class="card-title">Interpretación experta (Individual)</h5>
+        <p>{{ interp_ind }}</p>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- 6) Compartir por correo -->
     <div class="card shadow-sm mb-4">
       <div class="card-body">
         <h5 class="card-title">Compartir por correo</h5>
@@ -85,16 +102,10 @@
         {% endif %}
         <form method="POST" class="row g-3 needs-validation" novalidate>
           <div class="col-auto flex-grow-1">
-            <input
-              type="email"
-              name="email"
-              class="form-control"
-              placeholder="Destinatario"
-              required
-              pattern="^(?!.*\s{2,}).*\S.*$"
-              maxlength="50"
-              title="Máx. 50 caracteres, no espacios dobles ni solo espacios."
-            >
+            <input type="email" name="email" class="form-control"
+                   placeholder="Destinatario" required
+                   pattern="^(?!.*\s{2,}).*\S.*$" maxlength="50"
+                   title="Máx 50 caracteres sin espacios dobles.">
             <div class="invalid-feedback">Ingresa un correo válido.</div>
           </div>
           <div class="col-auto">
@@ -106,6 +117,7 @@
       </div>
     </div>
     {% endif %}
+
   </div>
 </div>
 {% endblock %}

@@ -61,6 +61,10 @@ TD_API_KEY = '3a14abf485024ff8874242de3c165e55'
 TD_URL     = 'https://api.twelvedata.com/time_series'
 TD_STOCKS_URL = 'https://api.twelvedata.com/stocks'
 
+# - OpenRouter Config -
+OPENROUTER_URL     = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_API_KEY = "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"
+
 # — Máximos por campo para validación de longitud —
 MAX_LEN = {
     'email':       50,
@@ -179,6 +183,42 @@ def fetch_and_plot_td(ticker):
     plt.close()
     return img
 
+def get_deepseek_interpretation(prompt_text: str) -> str:
+    """
+    Llama al endpoint de OpenRouter (deepseek/deepseek-r1-zero:free)
+    usando chat completions y devuelve la interpretación, limpiando
+    cualquier envoltura \boxed{...}.
+    """
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type":  "application/json",
+        "HTTP-Referer":  "https://tu-sitio.com",  # opcional
+        "X-Title":       "Inversia"               # opcional
+    }
+    payload = {
+        "model":    "deepseek/deepseek-r1-zero:free",
+        "messages": [
+            { "role": "user", "content": prompt_text }
+        ]
+    }
+
+    resp = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
+
+    try:
+        content = data["choices"][0]["message"]["content"].strip()
+    except (KeyError, IndexError):
+        raise RuntimeError(f"Estructura inesperada en respuesta DeepSeek: {data}")
+
+    # === Limpiar envoltura \boxed{...} si existe ===
+    # Coincide \boxed{cualquier texto} y extrae solo 'cualquier texto'
+    m = re.match(r'^[\\]?boxed\{(.*)\}$', content, flags=re.DOTALL)
+    if m:
+        content = m.group(1).strip()
+
+    return content
+    
 def plot_portfolio(user_id):
     """
     Genera y guarda dos gráficas:
@@ -776,79 +816,88 @@ def get_valid_tickers():
 @app.route('/consulta', methods=['GET', 'POST'])
 def consulta():
     if 'user_id' not in session:
-        return redirect('/')
-    
-    error       = None
-    resultado   = None
-    ticker      = ''
-    conversiones = {}
+        return redirect(url_for('login'))
+
+    error         = None
+    resultado     = None
+    ticker        = ''
+    conversiones  = {}
+    interpretation = None
 
     if request.method == 'POST':
+        action = request.form.get('action')  # "consult" o "deepseek"
         raw    = request.form.get('ticker', '')
         ticker = raw.strip().upper()
 
-        # 1) validaciones básicas de formato
+        # validaciones básicas
         if not ticker:
             error = 'El ticker es obligatorio.'
         elif len(ticker) > MAX_LEN['ticker']:
             error = 'El ticker es demasiado largo.'
         elif re.search(r'\s{2,}', raw):
             error = 'No se permiten espacios consecutivos.'
-        else:
-            # 2) validación contra la lista oficial de Twelve Data
+
+        if not error:
+            # validación contra lista oficial
             try:
                 validos = get_valid_tickers()
-            except RequestException as re_err:
-                error = f"Error de red al validar ticker: {re_err}"
-            except Exception as e:
-                error = f"Error validando lista de tickers: {e}"
-            else:
                 if ticker not in validos:
                     error = f"Ticker '{ticker}' no está en la lista oficial."
                 else:
-                    # 3) si es válido, procedemos con la consulta
-                    try:
-                        resultado = fetch_and_plot_td(ticker)
+                    # generamos gráfico y conversiones _siempre_
+                    resultado = fetch_and_plot_td(ticker)
 
-                        # Obtener precio más reciente (USD)
-                        params = {
-                            'symbol':     ticker,
-                            'interval':   '1day',
+                    # precio más reciente y conversiones
+                    resp_json = requests.get(
+                        TD_URL,
+                        params={
+                            'symbol': ticker,
+                            'interval': '1day',
                             'outputsize': 1,
-                            'apikey':     TD_API_KEY,
-                            'format':     'JSON'
-                        }
-                        resp_json = requests.get(TD_URL, params=params, timeout=10).json()
-                        price = float(resp_json['values'][0]['close'])
+                            'apikey': TD_API_KEY,
+                            'format': 'JSON'
+                        },
+                        timeout=10
+                    ).json()
+                    price = float(resp_json['values'][0]['close'])
+                    rates = get_exchange_rates()
+                    conversiones = {
+                        'USD': round(price, 2),
+                        'MXN': round(price * rates['MXN'], 2),
+                        'EUR': round(price * rates['EUR'], 2),
+                        'GBP': round(price * rates['GBP'], 2),
+                        'JPY': round(price * rates['JPY'], 2),
+                    }
 
-                        # Obtener tasas de cambio
-                        rates = get_exchange_rates()
-                        conversiones = {
-                            'USD': round(price, 2),
-                            'MXN': round(price * rates['MXN'], 2),
-                            'EUR': round(price * rates['EUR'], 2),
-                            'GBP': round(price * rates['GBP'], 2),
-                            'JPY': round(price * rates['JPY'], 2),
-                        }
-
-                        # Guardar en historial
+                    # sólo en la acción "consult" guardamos en historial
+                    if action == 'consult':
                         with SessionLocal() as db:
                             db.add(TickerHistory(user_id=session['user_id'], ticker=ticker))
                             db.commit()
 
-                    except ValueError as ve:
-                        error = str(ve)
-                    except Exception as e:
-                        error = f"Error inesperado al consultar: {e}"
+                    # sólo en la acción "deepseek" invocamos a DeepSeek
+                    if action == 'deepseek':
+                        try:
+                            prompt = (
+                                f"Como experto financiero y actuario, analiza en texto plano "
+                                f"el gráfico de rendimiento diario de {ticker} y la tabla de conversiones {conversiones}. "
+                                "Sin código, sin fences, sin bullets Markdown."
+                            )
+                            interpretation = get_deepseek_interpretation(prompt)
+                        except Exception as e_int:
+                            interpretation = f"No se pudo obtener interpretación: {e_int}"
+
+            except Exception as e:
+                error = f"Error validando ticker: {e}"
 
     return render_template(
         'consulta.html',
         error=error,
         resultado=resultado,
         ticker=ticker,
-        conversiones=conversiones
+        conversiones=conversiones,
+        interpretation=interpretation
     )
-
 
 @app.route('/add', methods=['POST'])
 def add_portfolio():
@@ -908,81 +957,81 @@ def add_portfolio():
 @app.route('/portfolio', methods=['GET', 'POST'])
 def portfolio():
     if 'user_id' not in session:
-        return redirect('/')
-    msg = None
+        return redirect(url_for('login'))
 
-    # 1) manejo de envío de email
+    msg               = None
+    generate_analysis = False
+
+    # 1) manejo de envío de PDF
     if request.method == 'POST' and 'email' in request.form:
-        raw_email = request.form.get('email','').strip()
-        if not raw_email:
-            msg = 'El correo destinatario es obligatorio.'
-        elif len(raw_email) > MAX_LEN['email']:
-            msg = 'El correo destinatario es demasiado largo.'
-        elif re.search(r'\s{2,}', raw_email):
-            msg = 'No se permiten espacios consecutivos en el correo.'
-        else:
-            try:
-                pdf_path = generate_portfolio_pdf(session['user_id'])
-                send_portfolio_email(raw_email, pdf_path)
-                msg = f'Enviado a {raw_email} correctamente.'
-            except RuntimeError as re_err:
-                msg = str(re_err)
-            except Exception as e:
-                msg = f"Error inesperado al enviar correo: {e}"
+        raw_email = request.form['email'].strip()
+        # (aquí tu lógica de enviar PDF)
+        try:
+            pdf_path = generate_portfolio_pdf(session['user_id'])
+            send_portfolio_email(raw_email, pdf_path)
+            msg = f'Enviado a {raw_email} correctamente.'
+        except Exception as e:
+            msg = str(e)
 
-    # 2) obtenemos lista de tickers del usuario
+    # 2) si presionaron el botón de análisis experto
+    if request.method == 'POST' and request.form.get('action') == 'deepseek':
+        generate_analysis = True
+
+    # 3) obtenemos la lista de tickers
     with SessionLocal() as db:
         items = db.query(PortfolioItem).filter_by(user_id=session['user_id']).all()
     tickers = [i.ticker for i in items]
 
-    # 3) validamos TODOS contra la lista oficial
+    # 4) validamos los tickers
     try:
         validos = get_valid_tickers()
+        invalidos = [t for t in tickers if t not in validos]
+        if invalidos:
+            error = (
+                f"Ticker '{invalidos[0]}' no está en la lista oficial."
+                if len(invalidos)==1 else
+                f"Los siguientes tickers no están en la lista oficial: {', '.join(invalidos)}."
+            )
+            return render_template('portfolio.html', error=error, tickers=tickers)
     except Exception as e:
-        return render_template(
-            'portfolio.html',
-            error=f"Error validando lista de tickers: {e}",
-            tickers=tickers
-        )
+        return render_template('portfolio.html', error=f"Error validando tickers: {e}", tickers=tickers)
 
-    invalidos = [t for t in tickers if t not in validos]
-    if invalidos:
-        # mensaje custom idéntico al de consulta
-        if len(invalidos) == 1:
-            error = f"Ticker '{invalidos[0]}' no está en la lista oficial."
-        else:
-            lista = ", ".join(f"'{t}'" for t in invalidos)
-            error = f"Los siguientes tickers no están en la lista oficial: {lista}."
-        return render_template(
-            'portfolio.html',
-            error=error,
-            tickers=tickers
-        )
-
-    # 4) si todo es válido, generamos las gráficas
+    # 5) generamos las gráficas
     try:
         consolidated, individual, _ = plot_portfolio(session['user_id'])
-    except ValueError as ve:
-        return render_template(
-            'portfolio.html',
-            error=str(ve),
-            tickers=tickers
-        )
     except Exception as e:
-        return render_template(
-            'portfolio.html',
-            error=f"Error inesperado al generar gráficos: {e}",
-            tickers=tickers
-        )
+        return render_template('portfolio.html', error=f"Error generando gráficos: {e}", tickers=tickers)
 
-    # 5) render final
+    # 6) interpretaciones (sólo si generate_analysis=True)
+    interp_cons = interp_ind = None
+    if generate_analysis:
+        try:
+            prompt1 = (
+                "Como experto financiero y actuario, ofrece un análisis DEL GRÁFICO CONSOLIDADO "
+                "DE RENDIMIENTO en puro texto plano, sin código ni sintaxis."
+            )
+            interp_cons = get_deepseek_interpretation(prompt1)
+        except Exception as e_int:
+            interp_cons = f"No se pudo obtener interpretación: {e_int}"
+
+        try:
+            prompt2 = (
+                "Como experto financiero y actuario, ofrece un análisis DEL GRÁFICO INDIVIDUAL "
+                "DE RENDIMIENTO POR ACTIVO en puro texto plano, sin código ni sintaxis."
+            )
+            interp_ind = get_deepseek_interpretation(prompt2)
+        except Exception as e_int:
+            interp_ind = f"No se pudo obtener interpretación: {e_int}"
+
     return render_template(
         'portfolio.html',
         error=None,
         consolidated=consolidated,
         individual=individual,
         tickers=tickers,
-        message=msg
+        message=msg,
+        interp_cons=interp_cons,
+        interp_ind=interp_ind
     )
 
 @app.route('/delete', methods=['POST'])

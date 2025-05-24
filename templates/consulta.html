@@ -1,26 +1,24 @@
 <!-- templates/consulta.html -->
 {% extends 'base.html' %}
 {% block title %}Consulta · Inversia{% endblock %}
-
 {% block content %}
 <div class="row justify-content-center">
   <div class="col-md-8">
+
+    <!-- 1) Formulario principal de consulta -->
     <div class="card shadow-sm border-0 mb-4">
       <div class="card-body p-4">
         <h3 class="card-title mb-4">
           <i class="fa-solid fa-chart-line"></i> Consulta de Stock
         </h3>
         <form method="POST" class="row g-3 needs-validation" novalidate>
+          <input type="hidden" name="action" value="consult">
           <div class="col-auto flex-grow-1">
             <input
-              type="text"
-              name="ticker"
-              class="form-control"
-              placeholder="Ej: AAPL"
-              required
-              pattern="^(?!.*\s{2,}).*\S.*$"
-              maxlength="5"
-              title="No puede estar vacío, ni contener sólo espacios o doble espacio. Máx 5 caracteres."
+              type="text" name="ticker" class="form-control"
+              placeholder="Ej: AAPL" required
+              pattern="^(?!.*\s{2,}).*\S.*$" maxlength="5"
+              title="Máx 5 caracteres sin espacios dobles."
               autofocus
             >
             <div class="invalid-feedback">Ingresa un ticker válido.</div>
@@ -36,48 +34,57 @@
         {% endif %}
       </div>
     </div>
+
+    <!-- 2) Gráfico y tabla -->
     {% if resultado %}
-    <div class="card shadow-sm border-0">
-      <div class="card-body text-center">
-        <img
-          src="{{ url_for('static', filename=resultado) }}"
-          class="img-fluid rounded"
-          alt="Rendimiento de {{ ticker }}"
-        >
-        <br><br>
-        <form method="POST" action="{{ url_for('add_portfolio') }}">
-          <input type="hidden" name="ticker" value="{{ ticker }}">
-          <button class="btn btn-success">
-            <i class="fa-solid fa-plus"></i> Agregar {{ ticker }}
-          </button>
-        </form>
+      <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body text-center">
+          <img src="{{ url_for('static', filename=resultado) }}"
+               class="img-fluid rounded"
+               alt="Rendimiento de {{ ticker }}">
+          <br><br>
+          <form method="POST" action="{{ url_for('add_portfolio') }}">
+            <input type="hidden" name="ticker" value="{{ ticker }}">
+            <button class="btn btn-success">
+              <i class="fa-solid fa-plus"></i> Agregar {{ ticker }}
+            </button>
+          </form>
+        </div>
       </div>
-    </div>
+      {% if conversiones %}
+        <h3>Precio actual en distintas divisas</h3>
+        <table class="table table-sm table-striped mb-4">
+          <thead class="table-primary">
+            <tr><th>Divisa</th><th class="text-end">Precio</th></tr>
+          </thead>
+          <tbody>
+            {% for div, val in conversiones.items() %}
+              <tr><td>{{ div }}</td><td class="text-end">{{ val }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+
+      <!-- 3) Botón que dispara DeepSeek -->
+      <form method="POST" class="mb-4 needs-validation">
+        <input type="hidden" name="ticker" value="{{ ticker }}">
+        <input type="hidden" name="action" value="deepseek">
+        <button type="submit" class="btn btn-outline-secondary">
+          <i class="fa-solid fa-brain"></i> Generar interpretación experta
+        </button>
+      </form>
+
+      <!-- 4) Mostrar interpretación sólo si existe -->
+      {% if interpretation %}
+      <div class="card shadow-sm border-0">
+        <div class="card-body">
+          <h5 class="card-title">Interpretación experta</h5>
+          <p>{{ interpretation }}</p>
+        </div>
+      </div>
+      {% endif %}
     {% endif %}
-    {% if conversiones %}
-      <h3>Precio actual en distintas divisas</h3>
-      <table style="
-        width: 100%;
-        border-collapse: collapse;
-        font-family: Arial, sans-serif;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-      ">
-        <thead>
-          <tr style="background-color: #0731e9d0; color: white;">
-            <th style="padding: 12px; text-align: left;">Divisa</th>
-            <th style="padding: 12px; text-align: right;">Precio</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for divisa, valor in conversiones.items() %}
-          <tr style="border-bottom: 1px solid #ddd;">
-            <td style="padding: 12px;">{{ divisa }}</td>
-            <td style="padding: 12px; text-align: right;">{{ valor }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% endif %}
+
   </div>
 </div>
 {% endblock %}
