@@ -92,6 +92,15 @@ class PortfolioItem(Base):
     ticker  = Column(String, nullable=False)
     user    = relationship('User', back_populates='portfolio')
 
+class TickerHistory(Base):
+    __tablename__ = 'ticker_history'
+    id        = Column(Integer, primary_key=True)
+    user_id   = Column(Integer, ForeignKey('users.id'), nullable=False)
+    ticker    = Column(String, nullable=False)
+    timestamp = Column(String, default=lambda: time.strftime('%Y-%m-%d %H:%M:%S'))
+
+    user = relationship('User')
+
 Base.metadata.create_all(engine)
 
 # Usuario de prueba
@@ -435,6 +444,20 @@ def register():
             return redirect('/')
     return render_template('register.html')
 
+@app.route('/historial')
+def historial():
+    if 'user_id' not in session:
+        return redirect('/')
+    with SessionLocal() as db:
+        historial = (
+            db.query(TickerHistory)
+              .filter_by(user_id=session['user_id'])
+              .order_by(TickerHistory.timestamp.desc())
+              .limit(50)
+              .all()
+        )
+    return render_template('historial.html', historial=historial)
+
 @app.route('/consulta', methods=['GET', 'POST'])
 def consulta():
     if 'user_id' not in session:
@@ -479,6 +502,9 @@ def consulta():
                     'GBP': round(price * rates['GBP'], 2),
                     'JPY': round(price * rates['JPY'], 2),
                 }
+                with SessionLocal() as db:
+                    db.add(TickerHistory(user_id=session['user_id'], ticker=ticker))
+                    db.commit()
 
             except ValueError as ve:
                 error = str(ve)
