@@ -1,6 +1,6 @@
-<!-- templates/consulta.html -->
 {% extends 'base.html' %}
 {% block title %}Consulta · Inversia{% endblock %}
+
 {% block content %}
 <div class="row justify-content-center">
   <div class="col-md-8">
@@ -19,7 +19,7 @@
               placeholder="Ej: AAPL" required
               pattern="^(?!.*\s{2,}).*\S.*$" maxlength="5"
               title="Máx 5 caracteres sin espacios dobles."
-              autofocus
+              value="{{ ticker }}" autofocus
             >
             <div class="invalid-feedback">Ingresa un ticker válido.</div>
           </div>
@@ -36,14 +36,22 @@
     </div>
 
     <!-- 2) Gráfico y tabla -->
-    {% if resultado %}
+    {% if grafico_json %}
       <div class="card shadow-sm border-0 mb-4">
         <div class="card-body text-center">
-          <img src="{{ url_for('static', filename=resultado) }}"
-               class="img-fluid rounded"
-               alt="Rendimiento de {{ ticker }}">
-          <br><br>
-          <form method="POST" action="{{ url_for('add_portfolio') }}">
+          <h5 class="card-title mb-3">Gráfico de rendimiento diario</h5>
+          <div id="plot" style="width:100%;height:500px;"></div>
+          <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+          <script type="application/json" id="graph-data">
+            {{ grafico_json | safe }}
+          </script>
+          <script>
+            const rawJson = document.getElementById('graph-data').textContent;
+            const graph = JSON.parse(rawJson);
+            Plotly.newPlot('plot', graph.data, graph.layout);
+          </script>
+
+          <form method="POST" action="{{ url_for('add_portfolio') }}" class="mt-4">
             <input type="hidden" name="ticker" value="{{ ticker }}">
             <button class="btn btn-success">
               <i class="fa-solid fa-plus"></i> Agregar {{ ticker }}
@@ -51,6 +59,7 @@
           </form>
         </div>
       </div>
+
       {% if conversiones %}
         <h3>Precio actual en distintas divisas</h3>
         <table class="table table-sm table-striped mb-4">
@@ -83,6 +92,7 @@
         </div>
       </div>
       {% endif %}
+
     {% endif %}
 
   </div>

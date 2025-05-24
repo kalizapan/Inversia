@@ -1,6 +1,7 @@
 <!-- templates/portfolio.html -->
 {% extends 'base.html' %}
 {% block title %}Mi Portafolio · Inversia{% endblock %}
+
 {% block content %}
 <div class="row justify-content-center">
   <div class="col-md-8">
@@ -48,22 +49,37 @@
       </div>
     </div>
 
-    {% if consolidated and individual %}
-    <!-- 2) Gráfica consolidada -->
+    {% if consolidated_json and individual_json %}
+    <!-- 2) Gráfica consolidada Plotly -->
     <div class="card shadow-sm mb-4">
       <div class="card-body text-center">
         <h5 class="card-title">Rendimiento Consolidado</h5>
-        <img src="{{ url_for('static', filename=consolidated) }}"
-             class="img-fluid rounded" alt="Consolidado">
+        <div id="plot-consolidado" style="height:500px;"></div>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        <script type="application/json" id="graph-consolidado-data">
+          {{ consolidated_json | safe }}
+        </script>
+        <script>
+          const consRaw = document.getElementById('graph-consolidado-data').textContent;
+          const consGraph = JSON.parse(consRaw);
+          Plotly.newPlot('plot-consolidado', consGraph.data, consGraph.layout);
+        </script>
       </div>
     </div>
 
-    <!-- 3) Gráfica individual -->
+    <!-- 3) Gráfica individual Plotly -->
     <div class="card shadow-sm mb-4">
       <div class="card-body text-center">
         <h5 class="card-title">Rendimiento por Activo</h5>
-        <img src="{{ url_for('static', filename=individual) }}"
-             class="img-fluid rounded" alt="Individual">
+        <div id="plot-individual" style="height:500px;"></div>
+        <script type="application/json" id="graph-individual-data">
+          {{ individual_json | safe }}
+        </script>
+        <script>
+          const indRaw = document.getElementById('graph-individual-data').textContent;
+          const indGraph = JSON.parse(indRaw);
+          Plotly.newPlot('plot-individual', indGraph.data, indGraph.layout);
+        </script>
       </div>
     </div>
 
@@ -75,7 +91,7 @@
       </button>
     </form>
 
-    <!-- 5) Interpretación sólo si existe -->
+    <!-- 5) Interpretación -->
     {% if interp_cons %}
     <div class="card shadow-sm border-0 mb-4">
       <div class="card-body">

@@ -183,6 +183,111 @@ def fetch_and_plot_td(ticker):
     plt.close()
     return img
 
+import plotly
+import plotly.graph_objs as go
+import json
+
+def fetch_and_plot_td_plotly(ticker):
+    params = {
+        'symbol':     ticker,
+        'interval':   '1day',
+        'outputsize': 100,
+        'apikey':     TD_API_KEY,
+        'format':     'JSON'
+    }
+    resp = requests.get(TD_URL, params=params, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
+
+    values = data.get('values', [])
+    if not values:
+        raise ValueError("No hay datos disponibles.")
+
+    df = pd.DataFrame(values)
+    df['close'] = df['close'].astype(float)
+    df['date'] = pd.to_datetime(df['datetime'])
+    df.sort_values('date', inplace=True)
+
+    df['Rendimiento'] = np.log(df['close'] / df['close'].shift(1))
+    df.dropna(inplace=True)
+
+    trace = go.Scatter(
+        x=df['date'],
+        y=df['Rendimiento'],
+        mode='lines',
+        name=f'Rendimiento diario de {ticker}'
+    )
+    layout = go.Layout(
+        title=f'Rendimiento diario de {ticker}',
+        xaxis=dict(title='Fecha'),
+        yaxis=dict(title='Rt'),
+        template='plotly_white'
+    )
+
+    fig = go.Figure(data=[trace], layout=layout)
+    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+
+
+def generate_portfolio_plotly(tickers):
+    """
+    Devuelve dos JSON Plotly:
+    - uno para el gráfico consolidado
+    - uno para el gráfico individual por ticker
+    """
+    series = []
+    for t in tickers:
+        params = {
+            'symbol':     t,
+            'interval':   '1day',
+            'outputsize': 100,
+            'apikey':     TD_API_KEY,
+            'format':     'JSON'
+        }
+        resp = requests.get(TD_URL, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get('status') == 'error':
+            raise ValueError(f"API error para {t}: {data.get('message', 'desconocido')}")
+        vals = data.get('values') or []
+        if not vals:
+            raise ValueError(f"No hay datos para {t}.")
+        df = pd.DataFrame(vals)
+        df['close'] = df['close'].astype(float)
+        df['date']  = pd.to_datetime(df['datetime'])
+        df.set_index('date', inplace=True)
+        df.sort_index(inplace=True)
+        series.append(np.log(df['close'] / df['close'].shift(1)).rename(t))
+
+    df_all = pd.concat(series, axis=1).dropna()
+    df_all['Portfolio'] = df_all.mean(axis=1)
+
+    # Gráfico individual
+    traces_ind = []
+    for t in tickers:
+        traces_ind.append(go.Scatter(x=df_all.index, y=df_all[t], mode='lines', name=t))
+    fig_ind = go.Figure(data=traces_ind, layout=go.Layout(
+        title='Rendimiento diario por activo',
+        xaxis=dict(title='Fecha'),
+        yaxis=dict(title='Rt'),
+        template='plotly_white'
+    ))
+
+    # Gráfico consolidado
+    fig_cons = go.Figure(data=[
+        go.Scatter(x=df_all.index, y=df_all['Portfolio'], mode='lines', name='Portafolio')
+    ], layout=go.Layout(
+        title='Rendimiento consolidado del portafolio',
+        xaxis=dict(title='Fecha'),
+        yaxis=dict(title='Rt'),
+        template='plotly_white'
+    ))
+
+    return (
+        json.dumps(fig_cons, cls=plotly.utils.PlotlyJSONEncoder),
+        json.dumps(fig_ind, cls=plotly.utils.PlotlyJSONEncoder)
+    )
+
+
 def get_deepseek_interpretation(prompt_text: str) -> str:
     """
     Llama al endpoint de OpenRouter (deepseek/deepseek-r1-zero:free)
@@ -281,12 +386,13 @@ def plot_portfolio(user_id):
 
     return img_cons, img_ind, tickers
 
-
+import datetime
 def generate_portfolio_pdf(user_id):
     """
     Crea un PDF con la tabla de activos y ambas gráficas:
     - img_cons: rendimiento consolidado
     - img_ind : rendimiento individual
+    - tabla de conversión de divisas por activo
     """
     # 1) Obtener usuario
     with SessionLocal() as db:
@@ -312,24 +418,24 @@ def generate_portfolio_pdf(user_id):
 
     flowables = [
         Paragraph("Portafolio de Inversia", styles['CenteredTitle']),
-        Spacer(1, 0.2*inch),
+        Spacer(1, 0.2 * inch),
         Paragraph(f"Nombre: {user.first_name} {user.last_name}", styles['Normal']),
         Paragraph(f"Institución: {user.institucion}", styles['Normal']),
-        Spacer(1, 0.3*inch),
+        Spacer(1, 0.3 * inch),
     ]
 
     # 4) Tabla de activos
     data = [['Activo']] + [[t] for t in tickers]
-    table = Table(data, colWidths=[4*inch])
+    table = Table(data, colWidths=[4 * inch])
     table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2a9d8f')),
-        ('TEXTCOLOR',  (0,0), (-1,0), colors.white),
-        ('ALIGN',      (0,0), (-1,-1), 'CENTER'),
-        ('FONTNAME',   (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTSIZE',   (0,0), (-1,0), 14),
-        ('BOTTOMPADDING',(0,0),(-1,0),12),
-        ('BACKGROUND', (1,0), (-1,-1), colors.whitesmoke),
-        ('GRID',       (0,0), (-1,-1), 0.5, colors.gray),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2a9d8f')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 14),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (1, 0), (-1, -1), colors.whitesmoke),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.gray),
     ]))
     flowables.append(table)
     flowables.append(PageBreak())
@@ -338,8 +444,8 @@ def generate_portfolio_pdf(user_id):
     flowables.append(
         RLImage(
             os.path.join(STATIC_DIR, img_cons),
-            width=6*inch,
-            height=3*inch
+            width=6 * inch,
+            height=3 * inch
         )
     )
     flowables.append(PageBreak())
@@ -348,47 +454,69 @@ def generate_portfolio_pdf(user_id):
     flowables.append(
         RLImage(
             os.path.join(STATIC_DIR, img_ind),
-            width=6*inch,
-            height=3*inch
+            width=6 * inch,
+            height=3 * inch
         )
     )
+    flowables.append(PageBreak())
 
-    # 7) Agregar conversión de divisas usando último ticker
-    ultimo = tickers[-1]
-    params = {
-        'symbol': ultimo,
-        'interval': '1day',
-        'outputsize': 1,
-        'apikey': TD_API_KEY,
-        'format': 'JSON'
-    }
-    r = requests.get(TD_URL, params=params).json()
-    price = float(r['values'][0]['close'])
-    rates = get_exchange_rates()
-    conv_table = [['Divisa', 'Precio']]
-    for divisa in ['USD', 'MXN', 'EUR', 'GBP', 'JPY']:
-        mult = 1 if divisa == 'USD' else rates[divisa]
-        conv_table.append([divisa, f"{round(price * mult, 2):,.2f}"])
+    # 7) Tabla de conversión de divisas para todos los activos
+    try:
+        rates = get_exchange_rates()
+        headers = ['Ticker', 'USD', 'MXN', 'EUR', 'GBP', 'JPY']
+        conv_table = [headers]
 
-    table2 = Table(conv_table, colWidths=[2*inch, 2*inch])
-    table2.setStyle(TableStyle([
-        ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#264653')),
-        ('TEXTCOLOR',(0,0),(-1,0),colors.white),
-        ('ALIGN',(0,0),(-1,-1),'CENTER'),
-        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
-        ('FONTSIZE',(0,0),(-1,0),12),
-        ('BACKGROUND',(0,1),(-1,-1),colors.whitesmoke),
-        ('GRID',(0,0),(-1,-1),0.5,colors.gray),
-    ]))
-    flowables += [
-        Spacer(1, 0.3*inch),
-        Paragraph("Conversión de divisas", styles['Heading2']),
-        table2
-    ]
+        for ticker in tickers:
+            params = {
+                'symbol': ticker,
+                'interval': '1day',
+                'outputsize': 1,
+                'apikey': TD_API_KEY,
+                'format': 'JSON'
+            }
+            r = requests.get(TD_URL, params=params).json()
+            price = float(r['values'][0]['close'])
 
-    # 7) Generar PDF
+            fila = [ticker]
+            fila.append(round(price, 2))  # USD
+            fila.append(round(price * rates['MXN'], 2))
+            fila.append(round(price * rates['EUR'], 2))
+            fila.append(round(price * rates['GBP'], 2))
+            fila.append(round(price * rates['JPY'], 2))
+            conv_table.append(fila)
+
+        table2 = Table(conv_table, colWidths=[1.3 * inch] * 6)
+        table2.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#264653')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.whitesmoke),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.gray),
+        ]))
+
+        flowables += [
+            Paragraph("Conversión de divisas para cada activo del portafolio", styles['Heading2']),
+            Spacer(1, 0.2 * inch),
+            table2
+        ]
+        # Nota con fecha de tasas y fuente
+        today = datetime.datetime.now().strftime("%d/%m/%Y")
+        nota = Paragraph(
+            f"<i>Tasas de cambio obtenidas el {today} desde la API pública de <b>Frankfurter</b>.</i>",
+            styles['Normal']
+        )
+        flowables.append(Spacer(1, 0.15 * inch))
+        flowables.append(nota)
+
+    except Exception as e:
+        print(f"[ERROR en conversión de divisas] {e}")
+
+    # 8) Generar PDF
     doc.build(flowables)
     return pdf_path
+
 
 
 def send_portfolio_email(to_email, pdf_path):
@@ -818,11 +946,12 @@ def consulta():
     if 'user_id' not in session:
         return redirect(url_for('login'))
 
-    error         = None
-    resultado     = None
-    ticker        = ''
-    conversiones  = {}
+    error          = None
+    resultado      = None
+    ticker         = ''
+    conversiones   = {}
     interpretation = None
+    grafico_json   = None  # ← importante para evitar el UnboundLocalError
 
     if request.method == 'POST':
         action = request.form.get('action')  # "consult" o "deepseek"
@@ -838,16 +967,15 @@ def consulta():
             error = 'No se permiten espacios consecutivos.'
 
         if not error:
-            # validación contra lista oficial
             try:
                 validos = get_valid_tickers()
                 if ticker not in validos:
                     error = f"Ticker '{ticker}' no está en la lista oficial."
                 else:
-                    # generamos gráfico y conversiones _siempre_
-                    resultado = fetch_and_plot_td(ticker)
+                    # ✅ Gráfico interactivo con Plotly
+                    grafico_json = fetch_and_plot_td_plotly(ticker)
 
-                    # precio más reciente y conversiones
+                    # Precio y conversiones
                     resp_json = requests.get(
                         TD_URL,
                         params={
@@ -869,13 +997,13 @@ def consulta():
                         'JPY': round(price * rates['JPY'], 2),
                     }
 
-                    # sólo en la acción "consult" guardamos en historial
+                    # Guardar historial si es consulta normal
                     if action == 'consult':
                         with SessionLocal() as db:
                             db.add(TickerHistory(user_id=session['user_id'], ticker=ticker))
                             db.commit()
 
-                    # sólo en la acción "deepseek" invocamos a DeepSeek
+                    # Interpretación solo si se pidió análisis experto
                     if action == 'deepseek':
                         try:
                             prompt = (
@@ -893,7 +1021,8 @@ def consulta():
     return render_template(
         'consulta.html',
         error=error,
-        resultado=resultado,
+        resultado=None,
+        grafico_json=grafico_json,
         ticker=ticker,
         conversiones=conversiones,
         interpretation=interpretation
@@ -959,13 +1088,12 @@ def portfolio():
     if 'user_id' not in session:
         return redirect(url_for('login'))
 
-    msg               = None
+    msg = None
     generate_analysis = False
 
     # 1) manejo de envío de PDF
     if request.method == 'POST' and 'email' in request.form:
         raw_email = request.form['email'].strip()
-        # (aquí tu lógica de enviar PDF)
         try:
             pdf_path = generate_portfolio_pdf(session['user_id'])
             send_portfolio_email(raw_email, pdf_path)
@@ -973,36 +1101,36 @@ def portfolio():
         except Exception as e:
             msg = str(e)
 
-    # 2) si presionaron el botón de análisis experto
+    # 2) botón de análisis experto
     if request.method == 'POST' and request.form.get('action') == 'deepseek':
         generate_analysis = True
 
-    # 3) obtenemos la lista de tickers
+    # 3) obtener tickers
     with SessionLocal() as db:
         items = db.query(PortfolioItem).filter_by(user_id=session['user_id']).all()
     tickers = [i.ticker for i in items]
 
-    # 4) validamos los tickers
+    # 4) validar tickers
     try:
         validos = get_valid_tickers()
         invalidos = [t for t in tickers if t not in validos]
         if invalidos:
             error = (
                 f"Ticker '{invalidos[0]}' no está en la lista oficial."
-                if len(invalidos)==1 else
+                if len(invalidos) == 1 else
                 f"Los siguientes tickers no están en la lista oficial: {', '.join(invalidos)}."
             )
             return render_template('portfolio.html', error=error, tickers=tickers)
     except Exception as e:
         return render_template('portfolio.html', error=f"Error validando tickers: {e}", tickers=tickers)
 
-    # 5) generamos las gráficas
+    # 5) generar gráficas Plotly
     try:
-        consolidated, individual, _ = plot_portfolio(session['user_id'])
+        consolidated_json, individual_json = generate_portfolio_plotly(tickers)
     except Exception as e:
-        return render_template('portfolio.html', error=f"Error generando gráficos: {e}", tickers=tickers)
+        return render_template('portfolio.html', error=f"Error generando gráficas: {e}", tickers=tickers)
 
-    # 6) interpretaciones (sólo si generate_analysis=True)
+    # 6) interpretaciones
     interp_cons = interp_ind = None
     if generate_analysis:
         try:
@@ -1025,14 +1153,15 @@ def portfolio():
 
     return render_template(
         'portfolio.html',
-        error=None,
-        consolidated=consolidated,
-        individual=individual,
         tickers=tickers,
         message=msg,
+        error=None,
+        consolidated_json=consolidated_json,
+        individual_json=individual_json,
         interp_cons=interp_cons,
         interp_ind=interp_ind
     )
+
 
 @app.route('/delete', methods=['POST'])
 def delete_portfolio():
