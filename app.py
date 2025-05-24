@@ -283,5 +283,33 @@ def logout():
     session.clear()
     return redirect('/')
 
-if __name__=='__main__':
+from flask import Flask, render_template, request, session, redirect
+from respuestas import respuestas, tips
+import random
+
+app = Flask(__name__)
+app.secret_key = 'clave_secreta_para_session'
+
+@app.route('/chatfinanzas', methods=['GET', 'POST'])
+def chatfinanzas():
+    respuesta = ""
+    tip = random.choice(tips)
+    if request.method == 'POST':
+        pregunta = request.form['pregunta'].lower()
+        session['ultima_consulta'] = pregunta  # guarda consulta en sesión
+        respuesta = buscar_respuesta(pregunta)
+
+    return render_template('chatfinanzas.html', respuesta=respuesta, tip=tip)
+
+def buscar_respuesta(pregunta):
+    for clave in respuestas:
+        if clave in pregunta:
+            return respuestas[clave]
+    if 'ultima_consulta' in session:
+        for clave in respuestas:
+            if clave in session['ultima_consulta']:
+                return f"Sobre tu consulta previa: {respuestas[clave]}"
+    return "Lo siento, no encontré una respuesta. Intenta con otro término financiero."
+
+if __name__ == '__main__':
     app.run(debug=True)

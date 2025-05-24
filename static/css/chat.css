@@ -1,0 +1,15 @@
+body {
+    background-color: #f0f8ff;
+    font-family: 'Segoe UI', sans-serif;
+}
+.container {
+    border: 2px solid #dee2e6;
+    background-color: #ffffffcc;
+}
+h2 img {
+    vertical-align: middle;
+    margin-right: 8px;
+}
+footer {
+    font-size: 0.9em;
+}
