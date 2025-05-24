@@ -559,7 +559,7 @@ def add_portfolio():
     ticker = raw.strip().upper()
     error  = None
 
-    # validaciones básicas
+    # 1) validaciones básicas de formato
     if not ticker:
         error = 'El ticker es obligatorio.'
     elif len(ticker) > MAX_LEN['ticker']:
@@ -567,60 +567,53 @@ def add_portfolio():
     elif re.search(r'\s{2,}', raw):
         error = 'No se permiten espacios consecutivos.'
     else:
-        # Validamos en la API que exista al menos un dato
+        # 2) validación contra la lista oficial
         try:
-            params = {
-                'symbol':     ticker,
-                'interval':   '1day',
-                'outputsize': 1,
-                'apikey':     TD_API_KEY,
-                'format':     'JSON'
-            }
-            resp = requests.get(TD_URL, params=params, timeout=10)
-            resp.raise_for_status()
-            data = resp.json()
-            if data.get('status') == 'error' or not data.get('values'):
-                raise ValueError(data.get('message', 'Ticker inválido'))
-            # si pasa la validación, lo guardamos en BD
-            with SessionLocal() as db:
-                item = PortfolioItem(user_id=session['user_id'], ticker=ticker)
-                db.add(item)
-                try:
-                    db.commit()
-                except IntegrityError:
-                    db.rollback()  # ya existía, lo ignoramos
-        except (RequestException, ValueError) as e:
-            error = f'Ticker inválido: {e}'
+            validos = get_valid_tickers()
+        except Exception as e:
+            error = f"Error validando lista de tickers: {e}"
+        else:
+            if ticker not in validos:
+                error = f"Ticker '{ticker}' no está en la lista oficial."
+            else:
+                # 3) si pasa validación, guardamos en BD
+                with SessionLocal() as db:
+                    item = PortfolioItem(user_id=session['user_id'], ticker=ticker)
+                    db.add(item)
+                    try:
+                        db.commit()
+                    except IntegrityError:
+                        db.rollback()  # ya existía, lo ignoramos
 
     if error:
-        # si hubo error, re-renderizamos con la lista actual para permitir borrar
+        # 4) en caso de error, re-renderizamos portafolio con lista + gráficas (si hay)
         with SessionLocal() as db:
-            tickers = [i.ticker for i in db.query(PortfolioItem)
-                                      .filter_by(user_id=session['user_id'])]
-        # intentamos generar gráficas solo si hay al menos un ticker válido
+            items = db.query(PortfolioItem).filter_by(user_id=session['user_id']).all()
+        tickers = [i.ticker for i in items]
+
         try:
-            consolidated, individual, _ = plot_portfolio(session['user_id'])
+            cons, ind, _ = plot_portfolio(session['user_id'])
         except:
-            consolidated, individual = None, None
+            cons, ind = None, None
 
         return render_template(
             'portfolio.html',
             error=error,
             tickers=tickers,
-            consolidated=consolidated,
-            individual=individual
+            consolidated=cons,
+            individual=ind
         )
 
     return redirect('/portfolio')
 
-@app.route('/portfolio', methods=['GET','POST'])
+@app.route('/portfolio', methods=['GET', 'POST'])
 def portfolio():
     if 'user_id' not in session:
         return redirect('/')
     msg = None
 
-    # 1) Si vienen datos de envío por email, los procesamos primero
-    if request.method == 'POST':
+    # 1) manejo de envío de email
+    if request.method == 'POST' and 'email' in request.form:
         raw_email = request.form.get('email','').strip()
         if not raw_email:
             msg = 'El correo destinatario es obligatorio.'
@@ -638,36 +631,36 @@ def portfolio():
             except Exception as e:
                 msg = f"Error inesperado al enviar correo: {e}"
 
-    # 2) Obtener lista de tickers del usuario
+    # 2) obtenemos lista de tickers del usuario
     with SessionLocal() as db:
         items = db.query(PortfolioItem).filter_by(user_id=session['user_id']).all()
     tickers = [i.ticker for i in items]
 
-    # 3) Validar cada ticker contra la lista oficial de Twelve Data
-    error = None
+    # 3) validamos TODOS contra la lista oficial
     try:
         validos = get_valid_tickers()
-    except RequestException as re_err:
-        error = f"Error de red al validar tickers: {re_err}"
     except Exception as e:
-        error = f"Error validando lista de tickers: {e}"
-    else:
-        invalidos = [t for t in tickers if t not in validos]
-        if invalidos:
-            error = (
-                "Los siguientes tickers no están en la lista oficial y deben eliminarse: "
-                + ", ".join(invalidos)
-            )
+        return render_template(
+            'portfolio.html',
+            error=f"Error validando lista de tickers: {e}",
+            tickers=tickers
+        )
 
-    if error:
-        # Renderizamos con el error y la lista de tickers para que pueda borrarlos
+    invalidos = [t for t in tickers if t not in validos]
+    if invalidos:
+        # mensaje custom idéntico al de consulta
+        if len(invalidos) == 1:
+            error = f"Ticker '{invalidos[0]}' no está en la lista oficial."
+        else:
+            lista = ", ".join(f"'{t}'" for t in invalidos)
+            error = f"Los siguientes tickers no están en la lista oficial: {lista}."
         return render_template(
             'portfolio.html',
             error=error,
             tickers=tickers
         )
 
-    # 4) Si todos los tickers son válidos, generamos las gráficas
+    # 4) si todo es válido, generamos las gráficas
     try:
         consolidated, individual, _ = plot_portfolio(session['user_id'])
     except ValueError as ve:
@@ -683,7 +676,7 @@ def portfolio():
             tickers=tickers
         )
 
-    # 5) Finalmente renderizamos normalmente
+    # 5) render final
     return render_template(
         'portfolio.html',
         error=None,
