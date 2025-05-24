@@ -1,6 +1,7 @@
 # app.py
 import os
 import time
+import random
 import re
 import requests
 from requests import RequestException
@@ -103,6 +104,13 @@ class TickerHistory(Base):
     timestamp = Column(String, default=lambda: time.strftime('%Y-%m-%d %H:%M:%S'))
 
     user = relationship('User')
+
+class PasswordReset(Base):
+    __tablename__ = 'password_resets'
+    id      = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    code    = Column(String(6), nullable=False)
+    user    = relationship('User')
 
 Base.metadata.create_all(engine)
 
@@ -390,16 +398,25 @@ def login():
         error = 'Credenciales inválidas'
     return render_template('login.html', error=error)
 
-@app.route('/register', methods=['GET','POST'])
+@app.route('/register', methods=['GET', 'POST'])
 def register():
+    error = None
     if request.method == 'POST':
-        email       = request.form['email'].strip()
-        pwd         = request.form['password'].strip()
-        first_name  = request.form['first_name'].strip()
-        last_name   = request.form['last_name'].strip()
-        motivo      = request.form['reason'].strip()
-        institucion = request.form['institution'].strip()
+        # Obtener campos del formulario
+        email           = request.form['email'].strip()
+        pwd             = request.form['password'].strip()
+        confirm_pwd     = request.form['confirm_password'].strip()
+        first_name      = request.form['first_name'].strip()
+        last_name       = request.form['last_name'].strip()
+        motivo          = request.form['reason'].strip()
+        institucion     = request.form['institution'].strip()
 
+        # 1) Verificar que contraseña y confirmación coincidan
+        if pwd != confirm_pwd:
+            error = 'Las contraseñas no coinciden.'
+            return render_template('register.html', error=error)
+
+        # 2) Campos obligatorios y sin solo espacios
         raws = {
             'email':       email,
             'password':    pwd,
@@ -407,33 +424,30 @@ def register():
             'last_name':   last_name,
             'institucion': institucion
         }
+        if not all(raws.values()) or not motivo:
+            error = 'Todos los campos son obligatorios y no pueden contener solo espacios.'
+            return render_template('register.html', error=error)
 
-        if not all(raws.values()):
-            return render_template(
-                'register.html',
-                error='Todos los campos son obligatorios y no pueden contener solo espacios.'
-            )
-        for f, v in raws.items():
-            if len(v) > MAX_LEN[f]:
-                return render_template(
-                    'register.html',
-                    error=f"El campo {f} no puede exceder {MAX_LEN[f]} caracteres."
-                )
-            if re.search(r'\s{2,}', v):
-                return render_template(
-                    'register.html',
-                    error=f"El campo {f} no puede contener espacios consecutivos."
-                )
-        if not re.fullmatch(
-            r'(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}', pwd
-        ):
-            return render_template(
-                'register.html',
-                error='La contraseña no cumple los requisitos.'
-            )
+        # 3) Validar longitud y espacios dobles
+        for field, val in raws.items():
+            if len(val) > MAX_LEN[field]:
+                error = f"El campo {field} no puede exceder {MAX_LEN[field]} caracteres."
+                return render_template('register.html', error=error)
+            if re.search(r'\s{2,}', val):
+                error = f"El campo {field} no puede contener espacios consecutivos."
+                return render_template('register.html', error=error)
+
+        # 4) Validar formato de contraseña
+        if not re.fullmatch(r'(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}', pwd):
+            error = 'La contraseña no cumple los requisitos (mín 8 char, mayúsc, minúsc, número y símbolo).'
+            return render_template('register.html', error=error)
+
+        # 5) Intentar guardar en BD
         with SessionLocal() as db:
             if db.query(User).filter_by(email=email).first():
-                return render_template('register.html', error='Correo ya registrado.')
+                error = 'Correo ya registrado.'
+                return render_template('register.html', error=error)
+
             nuevo = User(
                 email=email,
                 password=generate_password_hash(pwd),
@@ -444,8 +458,90 @@ def register():
             )
             db.add(nuevo)
             db.commit()
-            return redirect('/')
+            return redirect(url_for('login'))
+
+    # GET
     return render_template('register.html')
+
+def send_reset_email(to_email, code):
+    msg = EmailMessage()
+    msg["Subject"] = "Código de recuperación de contraseña"
+    msg["From"]    = EMAIL_USER
+    msg["To"]      = to_email
+    msg.set_content(f"Tu código de recuperación de contraseña es: {code}")
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+            smtp.login(EMAIL_USER, EMAIL_PASS)
+            smtp.send_message(msg)
+    except smtplib.SMTPException as e:
+        raise RuntimeError(f"Error al enviar correo de recuperación: {e}")
+
+@app.route('/forgot_password', methods=['GET','POST'])
+def forgot_password():
+    error = None
+    message = None
+    if request.method == 'POST':
+        email = request.form['email'].strip().lower()
+        if not email or len(email)>MAX_LEN['email'] or re.search(r'\s{2,}', email):
+            error = 'Correo inválido.'
+        else:
+            with SessionLocal() as db:
+                user = db.query(User).filter_by(email=email).first()
+                if not user:
+                    error = 'Correo no registrado.'
+                else:
+                    code = f"{random.randint(0,999999):06d}"
+                    # borramos cualquier código previo
+                    db.query(PasswordReset).filter_by(user_id=user.id).delete()
+                    db.add(PasswordReset(user_id=user.id, code=code))
+                    db.commit()
+                    try:
+                        send_reset_email(email, code)
+                        message = 'Se ha enviado un código a tu correo.'
+                    except Exception as e:
+                        error = str(e)
+                        return render_template('forgot_password.html', error=error, message=message)
+        return redirect(url_for('reset_code', email=email))
+    return render_template('forgot_password.html', error=error)
+
+@app.route('/reset_code', methods=['GET','POST'])
+def reset_code():
+    error = None
+    email = request.form.get('email') or request.args.get('email','')
+    if request.method == 'POST':
+        code = request.form['code'].strip()
+        with SessionLocal() as db:
+            user = db.query(User).filter_by(email=email).first()
+            pr   = db.query(PasswordReset).filter_by(user_id=user.id, code=code).first() if user else None
+            if not pr:
+                error = 'Código o correo inválido.'
+            else:
+                db.delete(pr)
+                db.commit()
+                session['reset_user_id'] = user.id
+                return redirect(url_for('reset_password'))
+    return render_template('reset_code.html', error=error, email=email)
+
+@app.route('/reset_password', methods=['GET','POST'])
+def reset_password():
+    if 'reset_user_id' not in session:
+        return redirect(url_for('login'))
+    error = None
+    if request.method == 'POST':
+        pwd     = request.form['password'].strip()
+        confirm = request.form['confirm_password'].strip()
+        if pwd != confirm:
+            error = 'Las contraseñas no coinciden.'
+        elif not re.fullmatch(r'(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}', pwd):
+            error = 'La contraseña no cumple los requisitos.'
+        else:
+            with SessionLocal() as db:
+                user = db.query(User).get(session['reset_user_id'])
+                user.password = generate_password_hash(pwd)
+                db.commit()
+            session.pop('reset_user_id', None)
+            return redirect(url_for('login'))
+    return render_template('reset_password.html', error=error)
 
 @app.route('/historial')
 def historial():

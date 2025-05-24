@@ -1,7 +1,6 @@
 <!-- templates/register.html -->
 {% extends 'base.html' %}
 {% block title %}Registro · Inversia{% endblock %}
-
 {% block content %}
 <div class="row justify-content-center">
   <div class="col-md-6 col-lg-5">
@@ -15,44 +14,29 @@
           <!-- Nombre -->
           <div class="mb-3">
             <label for="first_name" class="form-label">Nombre</label>
-            <input
-              type="text"
-              id="first_name"
-              name="first_name"
-              class="form-control"
-              placeholder="Tu nombre"
-              required
-              pattern="^(?!.*\s{2,}).*\S.*$"
-              maxlength="30"
-              title="No puede estar vacío, ni contener sólo espacios o doble espacio."
-            >
-            <div class="invalid-feedback">Ingresa tu nombre correcto.</div>
+            <input type="text" id="first_name" name="first_name"
+                   class="form-control"
+                   placeholder="Tu nombre"
+                   required pattern="^(?!.*\s{2,}).*\S.*$"
+                   maxlength="30"
+                   title="No puede estar vacío ni tener espacios dobles.">
+            <div class="invalid-feedback">Ingresa tu nombre.</div>
           </div>
           <!-- Apellidos -->
           <div class="mb-3">
             <label for="last_name" class="form-label">Apellidos</label>
-            <input
-              type="text"
-              id="last_name"
-              name="last_name"
-              class="form-control"
-              placeholder="Tus apellidos"
-              required
-              pattern="^(?!.*\s{2,}).*\S.*$"
-              maxlength="30"
-              title="No puede estar vacío, ni contener sólo espacios o doble espacio."
-            >
-            <div class="invalid-feedback">Ingresa tus apellidos correctos.</div>
+            <input type="text" id="last_name" name="last_name"
+                   class="form-control"
+                   placeholder="Tus apellidos"
+                   required pattern="^(?!.*\s{2,}).*\S.*$"
+                   maxlength="30"
+                   title="No puede estar vacío ni tener espacios dobles.">
+            <div class="invalid-feedback">Ingresa tus apellidos.</div>
           </div>
           <!-- Motivo -->
           <div class="mb-3">
             <label for="reason" class="form-label">Motivo</label>
-            <select
-              id="reason"
-              name="reason"
-              class="form-select"
-              required
-            >
+            <select id="reason" name="reason" class="form-select" required>
               <option value="" disabled selected>Selecciona...</option>
               <option value="Inversión">Inversión</option>
               <option value="Educativo">Educativo</option>
@@ -63,59 +47,57 @@
           <!-- Institución -->
           <div class="mb-3">
             <label for="institution" class="form-label">Institución</label>
-            <input
-              type="text"
-              id="institution"
-              name="institution"
-              class="form-control"
-              placeholder="Tu institución"
-              required
-              pattern="^(?!.*\s{2,}).*\S.*$"
-              maxlength="50"
-              title="No puede estar vacío, ni contener sólo espacios o doble espacio."
-            >
+            <input type="text" id="institution" name="institution"
+                   class="form-control"
+                   placeholder="Tu institución"
+                   required pattern="^(?!.*\s{2,}).*\S.*$"
+                   maxlength="50"
+                   title="No puede estar vacío ni tener espacios dobles.">
             <div class="invalid-feedback">Ingresa tu institución.</div>
           </div>
           <!-- Email -->
           <div class="mb-3">
             <label for="email" class="form-label">Correo electrónico</label>
-            <input
-              type="email"
-              id="email"
-              name="email"
-              class="form-control"
-              placeholder="tú@ejemplo.com"
-              required
-              pattern="^(?!.*\s{2,}).*\S.*$"
-              maxlength="50"
-              title="No puede estar vacío, ni contener sólo espacios o doble espacio."
-            >
+            <input type="email" id="email" name="email"
+                   class="form-control"
+                   placeholder="tú@ejemplo.com"
+                   required pattern="^(?!.*\s{2,}).*\S.*$"
+                   maxlength="50"
+                   title="No puede estar vacío ni tener espacios dobles.">
             <div class="invalid-feedback">Ingresa un correo válido.</div>
           </div>
           <!-- Contraseña -->
           <div class="mb-3">
             <label for="password" class="form-label">Contraseña</label>
-            <input
-              type="password"
-              id="password"
-              name="password"
-              class="form-control"
-              placeholder="Mín 8 char., mayúsc, minúsc, número y símbolo"
-              required
-              pattern="^(?!.*\s{2,}).*\S.*$"
-              maxlength="64"
-              title="No puede estar vacío, ni contener sólo espacios o doble espacio."
-            >
+            <input type="password" id="password" name="password"
+                   class="form-control"
+                   placeholder="Mín 8 char., mayúsc, minúsc, número y símbolo"
+                   required pattern="^(?!.*\s{2,}).*\S.*$"
+                   maxlength="64"
+                   title="No puede estar vacío ni tener espacios dobles.">
             <div class="invalid-feedback">
-              La contraseña es obligatoria y no puede contener espacios consecutivos.
+              La contraseña debe tener al menos 8 caracteres, mayúsculas,
+              minúsculas, un número y un símbolo.
             </div>
+          </div>
+          <!-- Confirmar Contraseña -->
+          <div class="mb-3">
+            <label for="confirm_password" class="form-label">Confirmar Contraseña</label>
+            <input type="password" id="confirm_password" name="confirm_password"
+                   class="form-control"
+                   placeholder="Repite tu contraseña"
+                   required pattern="^(?!.*\s{2,}).*\S.*$"
+                   maxlength="64"
+                   title="Debe coincidir con la contraseña.">
+            <div class="invalid-feedback">Las contraseñas deben coincidir.</div>
           </div>
           <button type="submit" class="btn btn-success w-100">
             <i class="fa-solid fa-user-plus"></i> Registrarme
           </button>
         </form>
         <p class="text-center mt-3 mb-0">
-          ¿Ya tienes cuenta? <a href="{{ url_for('login') }}">Inicia sesión</a>
+          ¿Ya tienes cuenta?
+          <a href="{{ url_for('login') }}">Inicia sesión</a>
         </p>
       </div>
     </div>
