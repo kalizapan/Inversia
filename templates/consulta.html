@@ -55,21 +55,29 @@
     </div>
     {% endif %}
     {% if conversiones %}
-    <h3>Precio actual en distintas divisas</h3>
-    <table border="1">
-      <tr>
-        <th>Divisa</th>
-        <th>Precio</th>
-      </tr>
-      {% for divisa, valor in conversiones.items() %}
-      <tr>
-        <td>{{ divisa }}</td>
-        <td>{{ valor }}</td>
-      </tr>
-      {% endfor %}
-    </table>
+      <h3>Precio actual en distintas divisas</h3>
+      <table style="
+        width: 100%;
+        border-collapse: collapse;
+        font-family: Arial, sans-serif;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      ">
+        <thead>
+          <tr style="background-color: #0731e9d0; color: white;">
+            <th style="padding: 12px; text-align: left;">Divisa</th>
+            <th style="padding: 12px; text-align: right;">Precio</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for divisa, valor in conversiones.items() %}
+          <tr style="border-bottom: 1px solid #ddd;">
+            <td style="padding: 12px;">{{ divisa }}</td>
+            <td style="padding: 12px; text-align: right;">{{ valor }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     {% endif %}
-
   </div>
 </div>
 {% endblock %}
