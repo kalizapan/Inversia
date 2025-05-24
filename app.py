@@ -3,6 +3,8 @@ import os
 import time
 import re
 import requests
+from requests import RequestException
+from functools import lru_cache
 import numpy as np
 import pandas as pd
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -55,6 +57,7 @@ EMAIL_PASS = os.environ.get('EMAIL_PASS', 'ovgu mmmo dakz sfnh')
 # — Twelve Data API config —
 TD_API_KEY = '3a14abf485024ff8874242de3c165e55'
 TD_URL     = 'https://api.twelvedata.com/time_series'
+TD_STOCKS_URL = 'https://api.twelvedata.com/stocks'
 
 # — Máximos por campo para validación de longitud —
 MAX_LEN = {
@@ -458,20 +461,34 @@ def historial():
         )
     return render_template('historial.html', historial=historial)
 
+@lru_cache(maxsize=1)
+def get_valid_tickers():
+    """
+    Descarga y cachea la lista de tickers válidos de Twelve Data.
+    """
+    resp = requests.get(TD_STOCKS_URL, params={'apikey': TD_API_KEY}, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()               # { "data": [ { "symbol": "...", ... }, ... ], ... }
+    stocks = data.get('data', [])
+    if not isinstance(stocks, list):
+        raise ValueError("Formato inesperado al obtener lista de tickers")
+    return { item['symbol'] for item in stocks }
+
 @app.route('/consulta', methods=['GET', 'POST'])
 def consulta():
     if 'user_id' not in session:
         return redirect('/')
     
-    error = None
-    resultado = None
-    ticker = ''
+    error       = None
+    resultado   = None
+    ticker      = ''
     conversiones = {}
-    
+
     if request.method == 'POST':
-        raw = request.form.get('ticker', '')
+        raw    = request.form.get('ticker', '')
         ticker = raw.strip().upper()
-        
+
+        # 1) validaciones básicas de formato
         if not ticker:
             error = 'El ticker es obligatorio.'
         elif len(ticker) > MAX_LEN['ticker']:
@@ -479,37 +496,51 @@ def consulta():
         elif re.search(r'\s{2,}', raw):
             error = 'No se permiten espacios consecutivos.'
         else:
+            # 2) validación contra la lista oficial de Twelve Data
             try:
-                resultado = fetch_and_plot_td(ticker)
-
-                # Obtener precio más reciente (USD)
-                params = {
-                    'symbol': ticker,
-                    'interval': '1day',
-                    'outputsize': 1,
-                    'apikey': TD_API_KEY,
-                    'format': 'JSON'
-                }
-                r = requests.get(TD_URL, params=params).json()
-                price = float(r['values'][0]['close'])
-
-                # Obtener tasas de cambio
-                rates = get_exchange_rates()
-                conversiones = {
-                    'USD': round(price, 2),
-                    'MXN': round(price * rates['MXN'], 2),
-                    'EUR': round(price * rates['EUR'], 2),
-                    'GBP': round(price * rates['GBP'], 2),
-                    'JPY': round(price * rates['JPY'], 2),
-                }
-                with SessionLocal() as db:
-                    db.add(TickerHistory(user_id=session['user_id'], ticker=ticker))
-                    db.commit()
-
-            except ValueError as ve:
-                error = str(ve)
+                validos = get_valid_tickers()
+            except RequestException as re_err:
+                error = f"Error de red al validar ticker: {re_err}"
             except Exception as e:
-                error = f"Error inesperado al consultar: {e}"
+                error = f"Error validando lista de tickers: {e}"
+            else:
+                if ticker not in validos:
+                    error = f"Ticker '{ticker}' no está en la lista oficial."
+                else:
+                    # 3) si es válido, procedemos con la consulta
+                    try:
+                        resultado = fetch_and_plot_td(ticker)
+
+                        # Obtener precio más reciente (USD)
+                        params = {
+                            'symbol':     ticker,
+                            'interval':   '1day',
+                            'outputsize': 1,
+                            'apikey':     TD_API_KEY,
+                            'format':     'JSON'
+                        }
+                        resp_json = requests.get(TD_URL, params=params, timeout=10).json()
+                        price = float(resp_json['values'][0]['close'])
+
+                        # Obtener tasas de cambio
+                        rates = get_exchange_rates()
+                        conversiones = {
+                            'USD': round(price, 2),
+                            'MXN': round(price * rates['MXN'], 2),
+                            'EUR': round(price * rates['EUR'], 2),
+                            'GBP': round(price * rates['GBP'], 2),
+                            'JPY': round(price * rates['JPY'], 2),
+                        }
+
+                        # Guardar en historial
+                        with SessionLocal() as db:
+                            db.add(TickerHistory(user_id=session['user_id'], ticker=ticker))
+                            db.commit()
+
+                    except ValueError as ve:
+                        error = str(ve)
+                    except Exception as e:
+                        error = f"Error inesperado al consultar: {e}"
 
     return render_template(
         'consulta.html',
@@ -524,30 +555,73 @@ def consulta():
 def add_portfolio():
     if 'user_id' not in session:
         return redirect('/')
-    raw = request.form.get('ticker', '')
+    raw    = request.form.get('ticker', '')
     ticker = raw.strip().upper()
-    if ticker and len(ticker) <= MAX_LEN['ticker'] and not re.search(r'\s{2,}', raw):
+    error  = None
+
+    # validaciones básicas
+    if not ticker:
+        error = 'El ticker es obligatorio.'
+    elif len(ticker) > MAX_LEN['ticker']:
+        error = 'El ticker es demasiado largo.'
+    elif re.search(r'\s{2,}', raw):
+        error = 'No se permiten espacios consecutivos.'
+    else:
+        # Validamos en la API que exista al menos un dato
+        try:
+            params = {
+                'symbol':     ticker,
+                'interval':   '1day',
+                'outputsize': 1,
+                'apikey':     TD_API_KEY,
+                'format':     'JSON'
+            }
+            resp = requests.get(TD_URL, params=params, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get('status') == 'error' or not data.get('values'):
+                raise ValueError(data.get('message', 'Ticker inválido'))
+            # si pasa la validación, lo guardamos en BD
+            with SessionLocal() as db:
+                item = PortfolioItem(user_id=session['user_id'], ticker=ticker)
+                db.add(item)
+                try:
+                    db.commit()
+                except IntegrityError:
+                    db.rollback()  # ya existía, lo ignoramos
+        except (RequestException, ValueError) as e:
+            error = f'Ticker inválido: {e}'
+
+    if error:
+        # si hubo error, re-renderizamos con la lista actual para permitir borrar
         with SessionLocal() as db:
-            item = PortfolioItem(user_id=session['user_id'], ticker=ticker)
-            db.add(item)
-            try:
-                db.commit()
-            except IntegrityError:
-                db.rollback()
-                # Ya existía, ignorar
+            tickers = [i.ticker for i in db.query(PortfolioItem)
+                                      .filter_by(user_id=session['user_id'])]
+        # intentamos generar gráficas solo si hay al menos un ticker válido
+        try:
+            consolidated, individual, _ = plot_portfolio(session['user_id'])
+        except:
+            consolidated, individual = None, None
+
+        return render_template(
+            'portfolio.html',
+            error=error,
+            tickers=tickers,
+            consolidated=consolidated,
+            individual=individual
+        )
+
     return redirect('/portfolio')
 
 @app.route('/portfolio', methods=['GET','POST'])
 def portfolio():
-    """
-    Muestra ambas gráficas y permite enviar el PDF del portafolio.
-    """
     if 'user_id' not in session:
         return redirect('/')
     msg = None
+
+    # 1) Si vienen datos de envío por email, los procesamos primero
     if request.method == 'POST':
         raw_email = request.form.get('email','').strip()
-        # Validaciones de email
         if not raw_email:
             msg = 'El correo destinatario es obligatorio.'
         elif len(raw_email) > MAX_LEN['email']:
@@ -564,13 +638,52 @@ def portfolio():
             except Exception as e:
                 msg = f"Error inesperado al enviar correo: {e}"
 
-    try:
-        consolidated, individual, tickers = plot_portfolio(session['user_id'])
-    except ValueError as ve:
-        return render_template('portfolio.html', error=str(ve))
-    except Exception as e:
-        return render_template('portfolio.html', error=f"Error inesperado: {e}")
+    # 2) Obtener lista de tickers del usuario
+    with SessionLocal() as db:
+        items = db.query(PortfolioItem).filter_by(user_id=session['user_id']).all()
+    tickers = [i.ticker for i in items]
 
+    # 3) Validar cada ticker contra la lista oficial de Twelve Data
+    error = None
+    try:
+        validos = get_valid_tickers()
+    except RequestException as re_err:
+        error = f"Error de red al validar tickers: {re_err}"
+    except Exception as e:
+        error = f"Error validando lista de tickers: {e}"
+    else:
+        invalidos = [t for t in tickers if t not in validos]
+        if invalidos:
+            error = (
+                "Los siguientes tickers no están en la lista oficial y deben eliminarse: "
+                + ", ".join(invalidos)
+            )
+
+    if error:
+        # Renderizamos con el error y la lista de tickers para que pueda borrarlos
+        return render_template(
+            'portfolio.html',
+            error=error,
+            tickers=tickers
+        )
+
+    # 4) Si todos los tickers son válidos, generamos las gráficas
+    try:
+        consolidated, individual, _ = plot_portfolio(session['user_id'])
+    except ValueError as ve:
+        return render_template(
+            'portfolio.html',
+            error=str(ve),
+            tickers=tickers
+        )
+    except Exception as e:
+        return render_template(
+            'portfolio.html',
+            error=f"Error inesperado al generar gráficos: {e}",
+            tickers=tickers
+        )
+
+    # 5) Finalmente renderizamos normalmente
     return render_template(
         'portfolio.html',
         error=None,
