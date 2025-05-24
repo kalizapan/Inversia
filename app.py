@@ -2,6 +2,7 @@
 import os
 import time
 import random
+from flask import url_for
 import re
 import requests
 from requests import RequestException
@@ -376,6 +377,73 @@ def send_portfolio_email(to_email, pdf_path):
     except smtplib.SMTPException as e:
         raise RuntimeError(f"Error al enviar correo: {e}")
 
+def send_welcome_email(to_email, first_name):
+    """
+    Envía un email de bienvenida con HTML/CSS inline,
+    sin imágenes, y con banner y botón en color aqua-green (#2a9d8f).
+    """
+    msg = EmailMessage()
+    msg["Subject"] = "¡Bienvenido a Inversia!"
+    msg["From"]    = EMAIL_USER
+    msg["To"]      = to_email
+
+    # Texto plano (fallback)
+    msg.set_content(f"Hola {first_name},\n\n"
+                    "¡Gracias por unirte a Inversia! Inicia sesión "
+                    "en nuestra plataforma y descubre todas las herramientas "
+                    "que tenemos para ti.\n\n"
+                    "— El equipo de Inversia")
+
+    login_url = url_for('login', _external=True)
+
+    html = f"""\
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        body {{ margin:0; padding:0; font-family: Arial, sans-serif; background:#f4f4f4; }}
+        .container {{ max-width:600px; margin:20px auto; background:#ffffff; border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.1); }}
+        .banner {{ background:#2a9d8f; color:#ffffff; text-align:center; padding:40px 0; font-size:24px; font-weight:bold; }}
+        .content {{ padding:20px; color:#333; }}
+        .content h1 {{ margin-top:0; color:#264653; }}
+        .btn {{ display:inline-block; margin:20px 0; padding:12px 24px; background:#2a9d8f; color:#fff; text-decoration:none; border-radius:4px; }}
+        .footer {{ background:#264653; color:#fff; text-align:center; font-size:12px; padding:10px; }}
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="banner">¡Bienvenido a Inversia!</div>
+        <div class="content">
+          <h1>Hola {first_name},</h1>
+          <p>Estamos encantados de darte la bienvenida a <strong>Inversia</strong>, tu nueva plataforma
+             para gestionar y analizar tus inversiones de forma fácil y profesional.</p>
+          <ul>
+            <li>📊 Consulta de cotizaciones en tiempo real</li>
+            <li>📈 Gráficas interactivas de rendimiento</li>
+            <li>💾 Historial automático de tus búsquedas</li>
+            <li>✉️ Compartir tus reportes en PDF por correo</li>
+          </ul>
+          <a href="{login_url}" class="btn">Iniciar Sesión</a>
+          <p>Si tienes dudas o necesitas ayuda, escríbenos a <a href="mailto:{EMAIL_USER}">{EMAIL_USER}</a>.</p>
+        </div>
+        <div class="footer">
+          © 2025 Inversia · Proyecto Académico
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+
+    msg.add_alternative(html, subtype='html')
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+            smtp.login(EMAIL_USER, EMAIL_PASS)
+            smtp.send_message(msg)
+    except smtplib.SMTPException as e:
+        raise RuntimeError(f"Error al enviar correo de bienvenida: {e}")
+
 @app.route('/', methods=['GET','POST'])
 def login():
     error = None
@@ -458,23 +526,149 @@ def register():
             )
             db.add(nuevo)
             db.commit()
+            try:
+                send_welcome_email(email, first_name)
+            except Exception as e:
+                # si falla el envío, solo lo logueamos;
+                # no bloqueamos el registro del usuario
+                print(f"[WARN] no se pudo enviar email de bienvenida: {e}")
             return redirect(url_for('login'))
 
     # GET
     return render_template('register.html')
 
+from flask import url_for
+
 def send_reset_email(to_email, code):
+    """
+    Envía un correo HTML estético para restablecer contraseña,
+    con un botón que lleva al usuario a la página de verificación.
+    """
     msg = EmailMessage()
-    msg["Subject"] = "Código de recuperación de contraseña"
+    msg["Subject"] = "🔒 Restablece tu contraseña en Inversia"
     msg["From"]    = EMAIL_USER
     msg["To"]      = to_email
-    msg.set_content(f"Tu código de recuperación de contraseña es: {code}")
+
+    # Fallback de texto plano
+    msg.set_content(
+        f"Hola,\n\n"
+        f"Hemos recibido una solicitud para restablecer la contraseña de tu cuenta ({to_email}).\n"
+        f"Tu código de verificación es: {code}\n\n"
+        f"Si no solicitaste esto, ignora este mensaje.\n\n"
+        f"— El equipo de Inversia"
+    )
+
+    # URL a la vista reset_code con el email en query param
+    reset_url = url_for('reset_code', email=to_email, _external=True)
+
+    # HTML inline con estilo sobresaliente
+    html = f"""\
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        body {{
+          margin: 0; padding: 0;
+          font-family: 'Arial', sans-serif;
+          background: #f0f2f5;
+        }}
+        .container {{
+          max-width: 600px;
+          margin: 30px auto;
+          background: #ffffff;
+          border-radius: 8px;
+          overflow: hidden;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }}
+        .banner {{
+          background: #2a9d8f;
+          color: #ffffff;
+          text-align: center;
+          padding: 24px 0;
+          font-size: 22px;
+          font-weight: bold;
+        }}
+        .content {{
+          padding: 24px;
+          color: #333333;
+          line-height: 1.6;
+        }}
+        .content h2 {{
+          margin-top: 0;
+          color: #2a9d8f;
+        }}
+        .code-box {{
+          background: #eef7f5;
+          border: 2px dashed #2a9d8f;
+          padding: 16px;
+          text-align: center;
+          font-family: 'Courier New', monospace;
+          font-size: 20px;
+          color: #2a9d8f;
+          margin: 20px 0;
+          border-radius: 4px;
+        }}
+        .btn {{
+          display: block;
+          text-align: center;
+          margin: 20px auto;
+          padding: 14px 28px;
+          background: #2a9d8f;
+          color: #ffffff !important;
+          text-decoration: none;
+          font-size: 16px;
+          font-weight: bold;
+          border-radius: 4px;
+          width: fit-content;
+        }}
+        .footer {{
+          background: #f4f6f8;
+          color: #777777;
+          text-align: center;
+          font-size: 12px;
+          padding: 16px;
+        }}
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="banner">Restablece tu contraseña</div>
+        <div class="content">
+          <h2>¡Hola!</h2>
+          <p>
+            Hemos recibido una solicitud para restablecer la contraseña de tu cuenta
+            asociada a <strong>{to_email}</strong>.
+          </p>
+          <p>Tu código de verificación es:</p>
+          <div class="code-box">{code}</div>
+          <p>
+            Haz clic en el siguiente botón para ir al formulario de verificación,
+            donde podrás ingresar tu código y elegir una nueva contraseña:
+          </p>
+          <a href="{reset_url}" class="btn">Verificar y restablecer</a>
+          <p>
+            Si no solicitaste este cambio, simplemente ignora este correo y tu
+            contraseña permanecerá igual.
+          </p>
+        </div>
+        <div class="footer">
+          © 2025 Inversia · Proyecto Académico<br>
+          ¿Tienes dudas? Contáctanos en <a href="mailto:{EMAIL_USER}">{EMAIL_USER}</a>
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+
+    msg.add_alternative(html, subtype='html')
+
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
             smtp.login(EMAIL_USER, EMAIL_PASS)
             smtp.send_message(msg)
     except smtplib.SMTPException as e:
-        raise RuntimeError(f"Error al enviar correo de recuperación: {e}")
+        raise RuntimeError(f"Error al enviar correo de restablecimiento: {e}")
 
 @app.route('/forgot_password', methods=['GET','POST'])
 def forgot_password():
