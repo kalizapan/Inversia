@@ -206,7 +206,18 @@ import plotly
 import plotly.graph_objs as go
 import json
 
-def fetch_and_plot_td_plotly(ticker):
+import requests
+import pandas as pd
+import numpy as np
+import plotly.graph_objs as go
+import json
+
+def fetch_and_plot_td_plotly(ticker: str) -> str:
+    """
+    Descarga datos de TwelveData, calcula log-retornos y devuelve
+    un JSON listo para Plotly, con y-values como floats.
+    """
+    # 1) Llamada a la API
     params = {
         'symbol':     ticker,
         'interval':   '1day',
@@ -217,22 +228,30 @@ def fetch_and_plot_td_plotly(ticker):
     resp = requests.get(TD_URL, params=params, timeout=10)
     resp.raise_for_status()
     data = resp.json()
-
     values = data.get('values', [])
     if not values:
-        raise ValueError("No hay datos disponibles.")
+        raise ValueError(f"No hay datos para {ticker}")
 
+    # 2) Armar DataFrame
     df = pd.DataFrame(values)
     df['close'] = df['close'].astype(float)
-    df['date'] = pd.to_datetime(df['datetime'])
+    df['date']  = pd.to_datetime(df['datetime'])
     df.sort_values('date', inplace=True)
 
-    df['Rendimiento'] = np.log(df['close'] / df['close'].shift(1))
-    df.dropna(inplace=True)
+    # 3) Calcular log-retornos
+    df['log_close']   = np.log(df['close'])
+    df['Rendimiento'] = df['log_close'].diff()
+    df = df.dropna(subset=['Rendimiento'])
 
+    # 4) Forzar tipo float y debug rápido
+    df['Rendimiento'] = df['Rendimiento'].astype(float)
+    print(f"[DEBUG] {ticker} Rend min/max:", 
+          df['Rendimiento'].min(), df['Rendimiento'].max())
+
+    # 5) Construir la figura Plotly
     trace = go.Scatter(
-        x=df['date'],
-        y=df['Rendimiento'],
+        x=df['date'].tolist(),
+        y=df['Rendimiento'].tolist(),   # <-- lista de floats
         mode='lines',
         name=f'Rendimiento diario de {ticker}'
     )
@@ -242,8 +261,9 @@ def fetch_and_plot_td_plotly(ticker):
         yaxis=dict(title='Rt'),
         template='plotly_white'
     )
-
     fig = go.Figure(data=[trace], layout=layout)
+
+    # 6) Serializar a JSON
     return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
 
 def monte_carlo_simulation_yf(ticker, days=30, num_simulations=100):
@@ -307,14 +327,23 @@ def monte_carlo_simulation_yf(ticker, days=30, num_simulations=100):
         print(f"[ERROR Monte Carlo] {e}")
         return None, None, None, None
 
+import requests
+import pandas as pd
+import numpy as np
+import plotly
+import plotly.graph_objs as go
+import json
+
 def generate_portfolio_plotly(tickers):
     """
-    Devuelve dos JSON Plotly:
-    - uno para el gráfico consolidado
-    - uno para el gráfico individual por ticker
+    Devuelve dos cadenas JSON para Plotly:
+      1) gráfico consolidado: rendimiento promedio del portafolio
+      2) gráfico individual: línea de rendimiento por activo
+    Ambas usan log-retornos (no precios) y pasan listas de floats a Plotly.
     """
     series = []
     for t in tickers:
+        # 1) Descargar datos
         params = {
             'symbol':     t,
             'interval':   '1day',
@@ -325,47 +354,73 @@ def generate_portfolio_plotly(tickers):
         resp = requests.get(TD_URL, params=params, timeout=10)
         resp.raise_for_status()
         data = resp.json()
-        if data.get('status') == 'error':
-            raise ValueError(f"API error para {t}: {data.get('message', 'desconocido')}")
-        vals = data.get('values') or []
+        vals = data.get('values', []) or []
         if not vals:
             raise ValueError(f"No hay datos para {t}.")
+
+        # 2) Crear DataFrame y preparar fechas/precios
         df = pd.DataFrame(vals)
         df['close'] = df['close'].astype(float)
         df['date']  = pd.to_datetime(df['datetime'])
-        df.set_index('date', inplace=True)
-        df.sort_index(inplace=True)
-        series.append(np.log(df['close'] / df['close'].shift(1)).rename(t))
+        df.sort_values('date', inplace=True)
 
-    df_all = pd.concat(series, axis=1).dropna()
+        # 3) Calcular log-retornos
+        df['log_close'] = np.log(df['close'])
+        df['Rend']      = df['log_close'].diff()
+        df.dropna(subset=['Rend'], inplace=True)
+
+        # 4) Debug (opcional): checar rango de retornos
+        print(f"[DEBUG] {t} Rend min/max:", df['Rend'].min(), df['Rend'].max())
+
+        # 5) Añadir la serie de retornos al array
+        series.append(df.set_index('date')['Rend'].astype(float).rename(t))
+
+    # 6) Concatenar todas las series y calcular la media (portafolio)
+    df_all = pd.concat(series, axis=1)
+    df_all.dropna(inplace=True)
     df_all['Portfolio'] = df_all.mean(axis=1)
 
-    # Gráfico individual
+    # 7) Construir gráfico individual
     traces_ind = []
     for t in tickers:
-        traces_ind.append(go.Scatter(x=df_all.index, y=df_all[t], mode='lines', name=t))
-    fig_ind = go.Figure(data=traces_ind, layout=go.Layout(
-        title='Rendimiento diario por activo',
-        xaxis=dict(title='Fecha'),
-        yaxis=dict(title='Rt'),
-        template='plotly_white'
-    ))
+        traces_ind.append(go.Scatter(
+            x=df_all.index.tolist(),
+            y=df_all[t].tolist(),       # lista de floats, no Series ni strings
+            mode='lines',
+            name=t
+        ))
+    fig_ind = go.Figure(
+        data=traces_ind,
+        layout=go.Layout(
+            title='Rendimiento diario por activo',
+            xaxis=dict(title='Fecha'),
+            yaxis=dict(title='Rt'),
+            template='plotly_white'
+        )
+    )
 
-    # Gráfico consolidado
-    fig_cons = go.Figure(data=[
-        go.Scatter(x=df_all.index, y=df_all['Portfolio'], mode='lines', name='Portafolio')
-    ], layout=go.Layout(
-        title='Rendimiento consolidado del portafolio',
-        xaxis=dict(title='Fecha'),
-        yaxis=dict(title='Rt'),
-        template='plotly_white'
-    ))
+    # 8) Construir gráfico consolidado
+    trace_cons = go.Scatter(
+        x=df_all.index.tolist(),
+        y=df_all['Portfolio'].tolist(),
+        mode='lines',
+        name='Portafolio'
+    )
+    fig_cons = go.Figure(
+        data=[trace_cons],
+        layout=go.Layout(
+            title='Rendimiento consolidado del portafolio',
+            xaxis=dict(title='Fecha'),
+            yaxis=dict(title='Rt'),
+            template='plotly_white'
+        )
+    )
 
+    # 9) Serializar a JSON para inyectar en la plantilla
     return (
         json.dumps(fig_cons, cls=plotly.utils.PlotlyJSONEncoder),
         json.dumps(fig_ind, cls=plotly.utils.PlotlyJSONEncoder)
     )
-
 
 def get_deepseek_interpretation(prompt_text: str) -> str:
     """
