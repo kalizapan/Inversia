@@ -11,7 +11,8 @@ import numpy as np
 import pandas as pd
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import lru_cache
-
+from cachetools import TTLCache, cached
+import yfinance as yf
 
 # Matplotlib sin GUI
 import matplotlib
@@ -54,6 +55,9 @@ app = Flask(
 )
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24).hex())
 
+# -Configuracion Cache-
+td_cache = TTLCache(maxsize=100, ttl=3600)
+
 # — Credenciales de correo SMTP —
 EMAIL_USER = os.environ.get('EMAIL_USER', 'inversiacontact@gmail.com')
 EMAIL_PASS = os.environ.get('EMAIL_PASS', 'ovgu mmmo dakz sfnh')
@@ -65,7 +69,7 @@ TD_STOCKS_URL = 'https://api.twelvedata.com/stocks'
 
 # - OpenRouter Config -
 OPENROUTER_URL     = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_API_KEY = "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"
+OPENROUTER_API_KEY = "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"
 
 # — Máximos por campo para validación de longitud —
 MAX_LEN = {
@@ -133,6 +137,28 @@ with SessionLocal() as db:
             institucion='Universidad X'
         ))
         db.commit()
+
+@cached(td_cache)
+def get_td_timeseries(symbol: str,
+                      interval: str = '1day',
+                      outputsize: int = 100) -> dict:
+    """
+    Devuelve el JSON de TwelveData para ese símbolo y
+    lo cachea 15 min. Lanza ValueError si hay error.
+    """
+    params = {
+        'symbol':     symbol,
+        'interval':   interval,
+        'outputsize': outputsize,
+        'apikey':     TD_API_KEY,
+        'format':     'JSON'
+    }
+    resp = requests.get(TD_URL, params=params, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
+    if data.get('status') == 'error':
+        raise ValueError(data.get('message', 'Error desconocido'))
+    return data
 
 # Tipo de cambio desde frankfurter
 def get_exchange_rates(base='USD'):
@@ -213,119 +239,107 @@ import plotly.graph_objs as go
 import json
 
 def fetch_and_plot_td_plotly(ticker: str) -> str:
-    """
-    Descarga datos de TwelveData, calcula log-retornos y devuelve
-    un JSON listo para Plotly, con y-values como floats.
-    """
-    # 1) Llamada a la API
-    params = {
-        'symbol':     ticker,
-        'interval':   '1day',
-        'outputsize': 100,
-        'apikey':     TD_API_KEY,
-        'format':     'JSON'
-    }
-    resp = requests.get(TD_URL, params=params, timeout=10)
-    resp.raise_for_status()
-    data = resp.json()
+    # 1) usar la función cacheada
+    data = get_td_timeseries(ticker, interval='1day', outputsize=100)
     values = data.get('values', [])
     if not values:
         raise ValueError(f"No hay datos para {ticker}")
 
-    # 2) Armar DataFrame
+    # 2) resto idéntico: DataFrame, fechas y cálculo de log-retornos
     df = pd.DataFrame(values)
     df['close'] = df['close'].astype(float)
     df['date']  = pd.to_datetime(df['datetime'])
     df.sort_values('date', inplace=True)
 
-    # 3) Calcular log-retornos
     df['log_close']   = np.log(df['close'])
-    df['Rendimiento'] = df['log_close'].diff()
-    df = df.dropna(subset=['Rendimiento'])
+    df['Rendimiento'] = df['log_close'].diff().dropna().astype(float)
 
-    # 4) Forzar tipo float y debug rápido
-    df['Rendimiento'] = df['Rendimiento'].astype(float)
-    print(f"[DEBUG] {ticker} Rend min/max:", 
+    # DEBUG opcional:
+    print(f"[DEBUG] {ticker} Rend min/max:",
           df['Rendimiento'].min(), df['Rendimiento'].max())
 
-    # 5) Construir la figura Plotly
+    # 3) crear la figura
     trace = go.Scatter(
         x=df['date'].tolist(),
-        y=df['Rendimiento'].tolist(),   # <-- lista de floats
+        y=df['Rendimiento'].tolist(),
         mode='lines',
-        name=f'Rendimiento diario de {ticker}'
+        name=f'Rend diario {ticker}'
     )
     layout = go.Layout(
-        title=f'Rendimiento diario de {ticker}',
-        xaxis=dict(title='Fecha'),
-        yaxis=dict(title='Rt'),
+        title=f'Rend diario de {ticker}',
+        xaxis={'title':'Fecha'},
+        yaxis={'title':'Rt'},
         template='plotly_white'
     )
     fig = go.Figure(data=[trace], layout=layout)
 
-    # 6) Serializar a JSON
+    # 4) serializar
     return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
 
-def monte_carlo_simulation_yf(ticker, days=30, num_simulations=100):
-    import yfinance as yf
-    import os
+def monte_carlo_simulation_yf(ticker: str,
+                              days: int = 30,
+                              num_simulations: int = 100):
+    """
+    Simulación Monte Carlo con yfinance:
+      - descarga cierres diarios
+      - calcula log-retornos
+      - genera num_simulations trayectorias de longitud days
+      - guarda gráfico en STATIC_DIR
+    Retorna: (filename, expected, p5, p95)
+    Lanza ValueError si algo falla.
+    """
+    np.random.seed(42)
+    # 1) Descargar históricos
+    df = yf.download(ticker, period=f"{days*2}d", interval="1d", progress=False)
+    if df.empty or 'Close' not in df:
+        raise ValueError(f"No se obtuvieron datos para '{ticker}'")
+    closes = df['Close'].dropna()
+    if len(closes) < 2:
+        raise ValueError(f"Datos insuficientes ({len(closes)} cierres) para '{ticker}'")
 
-    # Si no puedes importar STATIC_DIR directamente:
-    STATIC_DIR = os.path.join(os.path.dirname(__file__), 'static')
+    # 2) Calcular log-retornos
+    log_rets   = np.log(closes / closes.shift(1)).dropna()
+    last_price = float(closes.iloc[-1])
+    mu    = float(log_rets.mean())
+    sigma = float(log_rets.std())
 
-    try:
-        print(f"[INFO] Simulación Monte Carlo: {ticker}, días={days}, simulaciones={num_simulations}")
-        data = yf.download(ticker, period='60d', interval='1d', progress=False)
-        if data.empty:
-            raise ValueError("No se obtuvieron datos históricos")
+    # 3) Generar simulaciones como lista de listas
+    sim_paths = []
+    for _ in range(num_simulations):
+        path = [last_price]
+        for _ in range(1, days):
+            shock = np.random.normal(mu - 0.5 * sigma**2, sigma)
+            path.append(path[-1] * np.exp(shock))
+        sim_paths.append(path)
 
-        close_prices = data['Close'].dropna().to_numpy()
-        if len(close_prices) < 2:
-            raise ValueError("Datos insuficientes para simular.")
+    # 4) Convertir a array y transponer: shape será (days, num_simulations)
+    sims = np.array(sim_paths).T
 
-        last_price = close_prices[-1]
-        returns = np.diff(np.log(close_prices))
-        mu = returns.mean()
-        sigma = returns.std()
+    # 5) Métricas al final del período
+    final_prices = sims[-1, :]
+    expected = float(np.mean(final_prices))
+    p5       = float(np.percentile(final_prices, 5))
+    p95      = float(np.percentile(final_prices, 95))
 
-        print(f"[INFO] Último precio={last_price:.2f}, mu={mu:.5f}, sigma={sigma:.5f}")
+    # 6) Graficar
+    plt.figure(figsize=(10,5))
+    plt.plot(sims, lw=0.8, alpha=0.4)
+    plt.axhline(expected, linestyle='--', label=f'Esperado: ${expected:.2f}')
+    plt.axhline(p5,       linestyle='--', label=f'5%: ${p5:.2f}')
+    plt.axhline(p95,      linestyle='--', label=f'95%: ${p95:.2f}')
+    plt.title(f"Monte Carlo - {ticker.upper()}")
+    plt.xlabel("Días")
+    plt.ylabel("Precio simulado")
+    plt.legend(); plt.grid(True)
 
-        simulations = np.zeros((days, num_simulations))
-        for sim in range(num_simulations):
-            prices = [last_price]
-            for _ in range(1, days):
-                shock = np.random.normal(mu - 0.5 * sigma**2, sigma)
-                prices.append(prices[-1] * np.exp(shock))
-            simulations[:, sim] = prices
+    # 7) Guardar imagen con timestamp para evitar caché
+    os.makedirs(STATIC_DIR, exist_ok=True)
+    filename = f"montecarlo_{ticker.lower()}_{int(time.time())}.png"
+    outpath  = os.path.join(STATIC_DIR, filename)
+    plt.savefig(outpath)
+    plt.close()
 
-        final_prices = simulations[-1, :]
-        expected = np.mean(final_prices)
-        p5 = np.percentile(final_prices, 5)
-        p95 = np.percentile(final_prices, 95)
-
-        plt.figure(figsize=(10, 5))
-        plt.plot(simulations, lw=0.8, alpha=0.4)
-        plt.axhline(expected, color='blue', linestyle='--', label=f'Esperado: ${expected:.2f}')
-        plt.axhline(p5, color='red', linestyle='--', label=f'5%: ${p5:.2f}')
-        plt.axhline(p95, color='green', linestyle='--', label=f'95%: ${p95:.2f}')
-        plt.title(f"Simulación Monte Carlo - {ticker.upper()}")
-        plt.xlabel("Días")
-        plt.ylabel("Precio simulado")
-        plt.legend()
-        plt.grid(True)
-
-        os.makedirs(STATIC_DIR, exist_ok=True)
-        filename = f"montecarlo_{ticker}.png"
-        output_path = os.path.join(STATIC_DIR, filename)
-        plt.savefig(output_path)
-        plt.close()
-
-        print(f"[INFO] Imagen guardada: {output_path}")
-        return filename, expected, p5, p95
-
-    except Exception as e:
-        print(f"[ERROR Monte Carlo] {e}")
-        return None, None, None, None
+    return filename, expected, p5, p95
 
 import requests
 import pandas as pd
@@ -336,70 +350,52 @@ import json
 
 def generate_portfolio_plotly(tickers):
     """
-    Devuelve dos cadenas JSON para Plotly:
-      1) gráfico consolidado: rendimiento promedio del portafolio
-      2) gráfico individual: línea de rendimiento por activo
-    Ambas usan log-retornos (no precios) y pasan listas de floats a Plotly.
+    Devuelve (consolidado_json, individual_json) cacheando
+    cada descarga 15 min.
     """
     series = []
     for t in tickers:
-        # 1) Descargar datos
-        params = {
-            'symbol':     t,
-            'interval':   '1day',
-            'outputsize': 100,
-            'apikey':     TD_API_KEY,
-            'format':     'JSON'
-        }
-        resp = requests.get(TD_URL, params=params, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
+        data = get_td_timeseries(t, interval='1day', outputsize=100)
         vals = data.get('values', []) or []
         if not vals:
             raise ValueError(f"No hay datos para {t}.")
 
-        # 2) Crear DataFrame y preparar fechas/precios
         df = pd.DataFrame(vals)
         df['close'] = df['close'].astype(float)
         df['date']  = pd.to_datetime(df['datetime'])
         df.sort_values('date', inplace=True)
 
-        # 3) Calcular log-retornos
         df['log_close'] = np.log(df['close'])
-        df['Rend']      = df['log_close'].diff()
-        df.dropna(subset=['Rend'], inplace=True)
+        df['Rend']      = df['log_close'].diff().dropna().astype(float)
 
-        # 4) Debug (opcional): checar rango de retornos
+        # DEBUG opcional:
         print(f"[DEBUG] {t} Rend min/max:", df['Rend'].min(), df['Rend'].max())
 
-        # 5) Añadir la serie de retornos al array
-        series.append(df.set_index('date')['Rend'].astype(float).rename(t))
+        series.append(df.set_index('date')['Rend'].rename(t))
 
-    # 6) Concatenar todas las series y calcular la media (portafolio)
-    df_all = pd.concat(series, axis=1)
-    df_all.dropna(inplace=True)
+    df_all = pd.concat(series, axis=1).dropna()
     df_all['Portfolio'] = df_all.mean(axis=1)
 
-    # 7) Construir gráfico individual
-    traces_ind = []
-    for t in tickers:
-        traces_ind.append(go.Scatter(
+    # gráfico individual
+    traces_ind = [
+        go.Scatter(
             x=df_all.index.tolist(),
-            y=df_all[t].tolist(),       # lista de floats, no Series ni strings
+            y=df_all[t].tolist(),
             mode='lines',
             name=t
-        ))
+        ) for t in tickers
+    ]
     fig_ind = go.Figure(
         data=traces_ind,
         layout=go.Layout(
-            title='Rendimiento diario por activo',
-            xaxis=dict(title='Fecha'),
-            yaxis=dict(title='Rt'),
+            title='Rend diario por activo',
+            xaxis={'title':'Fecha'},
+            yaxis={'title':'Rt'},
             template='plotly_white'
         )
     )
 
-    # 8) Construir gráfico consolidado
+    # gráfico consolidado
     trace_cons = go.Scatter(
         x=df_all.index.tolist(),
         y=df_all['Portfolio'].tolist(),
@@ -409,14 +405,14 @@ def generate_portfolio_plotly(tickers):
     fig_cons = go.Figure(
         data=[trace_cons],
         layout=go.Layout(
-            title='Rendimiento consolidado del portafolio',
-            xaxis=dict(title='Fecha'),
-            yaxis=dict(title='Rt'),
+            title='Rend consolidado del portafolio',
+            xaxis={'title':'Fecha'},
+            yaxis={'title':'Rt'},
             template='plotly_white'
         )
     )
 
-    # 9) Serializar a JSON para inyectar en la plantilla
+    # serializar ambos
     return (
         json.dumps(fig_cons, cls=plotly.utils.PlotlyJSONEncoder),
         json.dumps(fig_ind, cls=plotly.utils.PlotlyJSONEncoder)

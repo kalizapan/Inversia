@@ -5,3 +5,5 @@ numpy
 matplotlib
 sqlalchemy
 reportlab
+cachetools
+plotly
