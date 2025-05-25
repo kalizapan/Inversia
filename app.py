@@ -56,7 +56,7 @@ app = Flask(
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24).hex())
 
 # -Configuracion Cache-
-td_cache = TTLCache(maxsize=100, ttl=3600)
+td_cache = TTLCache(maxsize=100, ttl=43200)
 
 # — Credenciales de correo SMTP —
 EMAIL_USER = os.environ.get('EMAIL_USER', 'inversiacontact@gmail.com')
@@ -1336,34 +1336,51 @@ def portfolio():
         interp_ind=interp_ind
     )
 
-@app.route('/montecarlo', methods=['GET', 'POST'])
-def montecarlo():
-    if 'user_id' not in session:
-        return redirect('/')
+@app.route('/montecarlo', methods=['GET'])
+def montecarlo_tutorial():
+    """
+    Muestra la pantalla de introducción a Monte Carlo.
+    """
+    return render_template('montecarlo_tutorial.html')
 
-    error = None
-    imagen = None
-    ticker = ''
+@app.route('/montecarlo/run', methods=['GET','POST'])
+def montecarlo_run():
+    """
+    Ejecuta la simulación Monte Carlo usando yfinance.
+    """
+    error   = None
+    imagen  = None
+    ticker  = ''
     esperado = p5 = p95 = None
 
     if request.method == 'POST':
-        raw = request.form.get('ticker', '')
+        raw    = request.form.get('ticker', '')
+        days   = int(request.form.get('days', 30))
+        sims   = int(request.form.get('num_sim', 100))
         ticker = raw.strip().upper()
 
         if not ticker:
             error = "El ticker es obligatorio."
         else:
-            imagen, esperado, p5, p95 = monte_carlo_simulation_yf(ticker)
-            if imagen is None:
-                error = f"No se pudo generar la simulación para '{ticker}'."
+            try:
+                # => tu función revisada de MC <
+                imagen, esperado, p5, p95 = monte_carlo_simulation_yf(
+                    ticker, days=days, num_simulations=sims
+                )
+                if not imagen:
+                    error = f"No se pudo generar la simulación para '{ticker}'."
+            except Exception as e:
+                error = str(e)
 
-    return render_template('montecarlo.html',
-                           ticker=ticker,
-                           imagen=imagen,
-                           error=error,
-                           esperado=esperado,
-                           p5=p5,
-                           p95=p95)
+    return render_template(
+        'monteCarlo.html',
+        ticker=ticker,
+        imagen=imagen,
+        error=error,
+        esperado=esperado,
+        p5=p5,
+        p95=p95
+    )
 
 @app.route('/delete', methods=['POST'])
 def delete_portfolio():
@@ -1383,6 +1400,133 @@ def delete_portfolio():
                 db.delete(item)
                 db.commit()
     return redirect('/portfolio')
+
+@app.route('/backtest', methods=['GET'])
+def backtest_tutorial():
+    """
+    Muestra la página de introducción/tutoria
+    antes de ejecutar el backtest real.
+    """
+    return render_template('backtest_tutorial.html')
+
+import pandas as pd
+import numpy as np
+import plotly.graph_objs as go
+import json
+import yfinance as yf
+from flask import request, render_template
+
+@app.route('/backtest/run', methods=['GET','POST'])
+def backtest_run():
+    """
+    Ejecuta realmente el backtest SMA crossover usando yfinance.
+    """
+    error      = None
+    graph_json = None
+    ticker     = ''
+    fast       = 20
+    slow       = 50
+    capital    = 10000.0
+    cagr = max_dd = sharpe = None
+
+    if request.method == 'POST':
+        # 1) Leer inputs
+        ticker  = request.form['ticker'].strip().upper()
+        fast    = int(request.form['fast'])
+        slow    = int(request.form['slow'])
+        capital = float(request.form['capital'])
+
+        # 2) Validaciones
+        if not ticker:
+            error = "Ticker obligatorio."
+        elif fast >= slow:
+            error = "La SMA rápida debe ser menor que la lenta."
+
+        if not error:
+            try:
+                # 3) Descargar con yfinance
+                df = yf.download(
+                    tickers=ticker,
+                    period="1y",
+                    interval="1d",
+                    progress=False,
+                    auto_adjust=False,
+                    threads=False
+                )
+                if df.empty or 'Close' not in df:
+                    raise ValueError("No hay datos con yfinance.")
+
+                # 4) Preparar DataFrame
+                df = df[['Close']].rename(columns={'Close':'close'})
+                df.index.name = 'date'
+                df.sort_index(inplace=True)
+
+                # 5) Calcular SMAs
+                df[f'SMA{fast}'] = df['close'].rolling(fast).mean()
+                df[f'SMA{slow}'] = df['close'].rolling(slow).mean()
+
+                # 6) Señal (shift sobre Serie, no ndarray)
+                signals = df[f'SMA{fast}'] > df[f'SMA{slow}']
+                df['signal'] = signals.shift(1).fillna(False).astype(float)
+
+                # 7) Retornos diarios
+                df['ret'] = df['close'].pct_change().fillna(0.0)
+
+                # 8) Equity curves
+                df['strat_ret'] = df['ret'] * df['signal']
+                df['equity']    = (1 + df['strat_ret']).cumprod() * capital
+                df['buy_hold']  = (1 + df['ret']).cumprod() * capital
+
+                # 9) Métricas
+                total_days   = df.shape[0]
+                years        = total_days / 252
+                final_equity = df['equity'].iloc[-1]
+                cagr         = (final_equity / capital)**(1/years) - 1
+
+                roll_max = df['equity'].cummax()
+                drawdown = (df['equity'] - roll_max) / roll_max
+                max_dd   = drawdown.min()
+
+                sharpe = (
+                    df['strat_ret'].mean() /
+                    df['strat_ret'].std(ddof=1)
+                ) * np.sqrt(252)
+
+                # 10) Gráfico Plotly
+                trace_strat = go.Scatter(
+                    x=df.index.tolist(),
+                    y=df['equity'].tolist(),
+                    mode='lines', name='Estrategia'
+                )
+                trace_bh = go.Scatter(
+                    x=df.index.tolist(),
+                    y=df['buy_hold'].tolist(),
+                    mode='lines', name='Buy & Hold'
+                )
+                layout = go.Layout(
+                    title=f"Backtest {ticker} SMA{fast}/{slow}",
+                    xaxis={'title':'Fecha'},
+                    yaxis={'title':'Valor (USD)'},
+                    template='plotly_white'
+                )
+                fig = go.Figure(data=[trace_strat, trace_bh], layout=layout)
+                graph_json = json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+
+            except Exception as e:
+                error = f"No se pudo backtestear '{ticker}': {e}"
+
+    return render_template(
+        'backtest.html',
+        error=error,
+        graph_json=graph_json,
+        ticker=ticker,
+        fast=fast,
+        slow=slow,
+        capital=capital,
+        cagr=cagr or 0,
+        max_dd=max_dd or 0,
+        sharpe=sharpe or 0
+    )
 
 @app.route('/logout')
 def logout():
