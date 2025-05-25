@@ -10,6 +10,8 @@ from functools import lru_cache
 import numpy as np
 import pandas as pd
 from werkzeug.security import generate_password_hash, check_password_hash
+from functools import lru_cache
+
 
 # Matplotlib sin GUI
 import matplotlib
@@ -63,7 +65,7 @@ TD_STOCKS_URL = 'https://api.twelvedata.com/stocks'
 
 # - OpenRouter Config -
 OPENROUTER_URL     = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_API_KEY = "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"
+OPENROUTER_API_KEY = "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"
 
 # — Máximos por campo para validación de longitud —
 MAX_LEN = {
@@ -142,6 +144,23 @@ def get_exchange_rates(base='USD'):
     except Exception as e:
         print(f"[ERROR Frankfurter] {e}")
         return {'MXN': 0, 'EUR': 0, 'GBP': 0, 'JPY': 0}
+
+
+@lru_cache(maxsize=100)
+def get_ticker_price(ticker):
+    try:
+        params = {
+            'symbol': ticker,
+            'interval': '1day',
+            'outputsize': 1,
+            'apikey': TD_API_KEY,
+            'format': 'JSON'
+        }
+        r = requests.get(TD_URL, params=params).json()
+        return float(r['values'][0]['close'])
+    except Exception as e:
+        print(f"[ERROR] No se pudo obtener el precio para {ticker}: {e}")
+        return 0.0
 
 
 def fetch_and_plot_td(ticker):
@@ -227,6 +246,66 @@ def fetch_and_plot_td_plotly(ticker):
     fig = go.Figure(data=[trace], layout=layout)
     return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
 
+def monte_carlo_simulation_yf(ticker, days=30, num_simulations=100):
+    import yfinance as yf
+    import os
+
+    # Si no puedes importar STATIC_DIR directamente:
+    STATIC_DIR = os.path.join(os.path.dirname(__file__), 'static')
+
+    try:
+        print(f"[INFO] Simulación Monte Carlo: {ticker}, días={days}, simulaciones={num_simulations}")
+        data = yf.download(ticker, period='60d', interval='1d', progress=False)
+        if data.empty:
+            raise ValueError("No se obtuvieron datos históricos")
+
+        close_prices = data['Close'].dropna().to_numpy()
+        if len(close_prices) < 2:
+            raise ValueError("Datos insuficientes para simular.")
+
+        last_price = close_prices[-1]
+        returns = np.diff(np.log(close_prices))
+        mu = returns.mean()
+        sigma = returns.std()
+
+        print(f"[INFO] Último precio={last_price:.2f}, mu={mu:.5f}, sigma={sigma:.5f}")
+
+        simulations = np.zeros((days, num_simulations))
+        for sim in range(num_simulations):
+            prices = [last_price]
+            for _ in range(1, days):
+                shock = np.random.normal(mu - 0.5 * sigma**2, sigma)
+                prices.append(prices[-1] * np.exp(shock))
+            simulations[:, sim] = prices
+
+        final_prices = simulations[-1, :]
+        expected = np.mean(final_prices)
+        p5 = np.percentile(final_prices, 5)
+        p95 = np.percentile(final_prices, 95)
+
+        plt.figure(figsize=(10, 5))
+        plt.plot(simulations, lw=0.8, alpha=0.4)
+        plt.axhline(expected, color='blue', linestyle='--', label=f'Esperado: ${expected:.2f}')
+        plt.axhline(p5, color='red', linestyle='--', label=f'5%: ${p5:.2f}')
+        plt.axhline(p95, color='green', linestyle='--', label=f'95%: ${p95:.2f}')
+        plt.title(f"Simulación Monte Carlo - {ticker.upper()}")
+        plt.xlabel("Días")
+        plt.ylabel("Precio simulado")
+        plt.legend()
+        plt.grid(True)
+
+        os.makedirs(STATIC_DIR, exist_ok=True)
+        filename = f"montecarlo_{ticker}.png"
+        output_path = os.path.join(STATIC_DIR, filename)
+        plt.savefig(output_path)
+        plt.close()
+
+        print(f"[INFO] Imagen guardada: {output_path}")
+        return filename, expected, p5, p95
+
+    except Exception as e:
+        print(f"[ERROR Monte Carlo] {e}")
+        return None, None, None, None
 
 def generate_portfolio_plotly(tickers):
     """
@@ -392,7 +471,7 @@ def generate_portfolio_pdf(user_id):
     Crea un PDF con la tabla de activos y ambas gráficas:
     - img_cons: rendimiento consolidado
     - img_ind : rendimiento individual
-    - tabla de conversión de divisas por activo
+    - tabla de conversión de divisas por activo (con manejo robusto de errores)
     """
     # 1) Obtener usuario
     with SessionLocal() as db:
@@ -438,7 +517,8 @@ def generate_portfolio_pdf(user_id):
         ('GRID', (0, 0), (-1, -1), 0.5, colors.gray),
     ]))
     flowables.append(table)
-    flowables.append(PageBreak())
+    if flowables and not isinstance(flowables[-1], PageBreak):
+        flowables.append(PageBreak())
 
     # 5) Gráfica consolidada
     flowables.append(
@@ -460,63 +540,106 @@ def generate_portfolio_pdf(user_id):
     )
     flowables.append(PageBreak())
 
-    # 7) Tabla de conversión de divisas para todos los activos
+    # 7) Tabla de conversión de divisas para todos los activos (MEJORADA)
+    flowables.append(PageBreak())
+    flowables.append(Paragraph("Conversión de divisas para cada activo del portafolio", styles['Heading2']))
+    flowables.append(Spacer(1, 0.2 * inch))
+
     try:
+        # Obtener tasas de cambio UNA SOLA VEZ
+        print("[INFO] Obteniendo tasas de cambio...")
         rates = get_exchange_rates()
+        if not rates or all(v == 0 for v in rates.values()):
+            raise ValueError("No se pudieron obtener las tasas de cambio")
+        
         headers = ['Ticker', 'USD', 'MXN', 'EUR', 'GBP', 'JPY']
         conv_table = [headers]
+        
+        successful_tickers = []
+        failed_tickers = []
 
-        for ticker in tickers:
-            params = {
-                'symbol': ticker,
-                'interval': '1day',
-                'outputsize': 1,
-                'apikey': TD_API_KEY,
-                'format': 'JSON'
-            }
-            r = requests.get(TD_URL, params=params).json()
-            price = float(r['values'][0]['close'])
+        for i, ticker in enumerate(tickers):
+            print(f"[INFO] Procesando ticker {ticker} ({i+1}/{len(tickers)})")
+            
+            # Añadir delay entre requests para evitar rate limiting
+            if i > 0:
+                time.sleep(0.5)  # 500ms entre requests
+            
+            try:
+                price = get_ticker_price(ticker)
+                if price is None:
+                    raise ValueError("No se pudo obtener el precio.")
+                
+                # Construir fila de la tabla
+                fila = [ticker]
+                fila.append(f"${price:.2f}")  # USD con formato
+                fila.append(f"${price * rates['MXN']:.2f}")
+                fila.append(f"€{price * rates['EUR']:.2f}")
+                fila.append(f"£{price * rates['GBP']:.2f}")
+                fila.append(f"¥{price * rates['JPY']:.0f}")  # JPY sin decimales
+                
+                conv_table.append(fila)
+                successful_tickers.append(ticker)
+                print(f"[SUCCESS] {ticker}: ${price:.2f}")
+                
+            except Exception as e:
+                print(f"[ERROR] Fallo con {ticker}: {e}")
+                failed_tickers.append(ticker)
+                
+                # Añadir fila con error en lugar de fallar completamente
+                error_row = [ticker, "Error", "Error", "Error", "Error", "Error"]
+                conv_table.append(error_row)
 
-            fila = [ticker]
-            fila.append(round(price, 2))  # USD
-            fila.append(round(price * rates['MXN'], 2))
-            fila.append(round(price * rates['EUR'], 2))
-            fila.append(round(price * rates['GBP'], 2))
-            fila.append(round(price * rates['JPY'], 2))
-            conv_table.append(fila)
-
-        table2 = Table(conv_table, colWidths=[1.3 * inch] * 6)
-        table2.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#264653')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 11),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.whitesmoke),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.gray),
-        ]))
-
-        flowables += [
-            Paragraph("Conversión de divisas para cada activo del portafolio", styles['Heading2']),
-            Spacer(1, 0.2 * inch),
-            table2
-        ]
-        # Nota con fecha de tasas y fuente
-        today = datetime.datetime.now().strftime("%d/%m/%Y")
-        nota = Paragraph(
-            f"<i>Tasas de cambio obtenidas el {today} desde la API pública de <b>Frankfurter</b>.</i>",
-            styles['Normal']
-        )
-        flowables.append(Spacer(1, 0.15 * inch))
-        flowables.append(nota)
+        # Crear tabla solo si tenemos al menos un ticker exitoso
+        if successful_tickers:
+            table2 = Table(conv_table, colWidths=[1.3 * inch] * 6)
+            table2.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#264653')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 11),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.whitesmoke),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.gray),
+            ]))
+            
+            flowables.append(table2)
+            
+            # Información adicional
+            today = datetime.datetime.now().strftime("%d/%m/%Y")
+            nota = Paragraph(
+                f"<i>Tasas de cambio obtenidas el {today} desde la API pública de <b>Frankfurter</b>.</i>",
+                styles['Normal']
+            )
+            flowables.append(Spacer(1, 0.15 * inch))
+            flowables.append(nota)
+            
+            # Mostrar información de errores si los hubo
+            if failed_tickers:
+                error_note = Paragraph(
+                    f"<i>Nota: No se pudieron obtener datos para: {', '.join(failed_tickers)}</i>",
+                    styles['Normal']
+                )
+                flowables.append(Spacer(1, 0.1 * inch))
+                flowables.append(error_note)
+                
+            print(f"[INFO] Tabla generada exitosamente. Exitosos: {len(successful_tickers)}, Errores: {len(failed_tickers)}")
+        else:
+            # Si todos los tickers fallaron
+            flowables.append(Paragraph("No se pudieron obtener datos de precios para ningún activo.", styles['Normal']))
+            if failed_tickers:
+                flowables.append(Paragraph(f"Tickers con error: {', '.join(failed_tickers)}", styles['Normal']))
 
     except Exception as e:
-        print(f"[ERROR en conversión de divisas] {e}")
+        print(f"[ERROR CRÍTICO en conversión de divisas] {e}")
+        flowables.append(Paragraph("Error crítico al generar la tabla de divisas.", styles['Heading2']))
+        flowables.append(Paragraph(f"Detalles del error: {str(e)}", styles['Normal']))
 
     # 8) Generar PDF
     doc.build(flowables)
+    print(f"[INFO] PDF generado exitosamente: {pdf_path}")
     return pdf_path
-
 
 
 def send_portfolio_email(to_email, pdf_path):
@@ -1162,6 +1285,34 @@ def portfolio():
         interp_ind=interp_ind
     )
 
+@app.route('/montecarlo', methods=['GET', 'POST'])
+def montecarlo():
+    if 'user_id' not in session:
+        return redirect('/')
+
+    error = None
+    imagen = None
+    ticker = ''
+    esperado = p5 = p95 = None
+
+    if request.method == 'POST':
+        raw = request.form.get('ticker', '')
+        ticker = raw.strip().upper()
+
+        if not ticker:
+            error = "El ticker es obligatorio."
+        else:
+            imagen, esperado, p5, p95 = monte_carlo_simulation_yf(ticker)
+            if imagen is None:
+                error = f"No se pudo generar la simulación para '{ticker}'."
+
+    return render_template('montecarlo.html',
+                           ticker=ticker,
+                           imagen=imagen,
+                           error=error,
+                           esperado=esperado,
+                           p5=p5,
+                           p95=p95)
 
 @app.route('/delete', methods=['POST'])
 def delete_portfolio():
