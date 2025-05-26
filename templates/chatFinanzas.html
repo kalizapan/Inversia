@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Chat Financiero Educativo - Inversia{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mb-4">
+  <div class="col-md-10">
+    <div class="card shadow-sm border-0">
+      <div class="card-body">
+        <h1 class="h4 text-primary mb-3">¿Qué es el Chat Financiero?</h1>
+        <p>Este módulo te permite consultar respuestas predeterminadas sobre temas de finanzas personales, inversiones y acciones bursátiles. Ideal para aprender los conceptos clave de forma rápida y educativa.</p>
+        <p><strong>¿Qué puedes preguntar?</strong></p>
+        <ul>
+          <li>¿Qué es una acción, bono o dividendo?</li>
+          <li>¿Qué hace Apple, Amazon, Tesla o Microsoft?</li>
+          <li>¿Qué sectores del mercado son más estables?</li>
+          <li>¿Cuáles son los riesgos de invertir?</li>
+          <li>¿Qué diferencias hay entre acciones de crecimiento y valor?</li>
+        </ul>
+        <p class="text-muted"><em>Recuerda: estas respuestas son educativas, no son recomendaciones reales de inversión.</em></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-md-8">
+    <div class="card shadow-sm border-0">
+      <div class="card-header bg-primary text-white">
+        <h5 class="mb-0"><i class="fa-solid fa-comments-dollar"></i> Realiza tu consulta</h5>
+      </div>
+      <div class="card-body">
+        <form method="POST" class="mb-4">
+          <div class="mb-3">
+            <label for="pregunta_dropdown" class="form-label">Selecciona una pregunta (opcional)</label>
+            <select class="form-select" name="pregunta_dropdown">
+              <option value="">-- Elige una opción --</option>
+              {% for pregunta in respuestas %}
+                <option value="{{ pregunta }}">{{ pregunta }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label for="pregunta_texto" class="form-label">O escribe tu propia pregunta</label>
+            <input type="text" name="pregunta_texto" class="form-control" placeholder="Escribe una pregunta financiera..." />
+          </div>
+
+          <button class="btn btn-primary" type="submit">
+            <i class="fa-solid fa-paper-plane"></i> Enviar
+          </button>
+        </form>
+
+        {% if respuesta %}
+          <div class="alert alert-success" role="alert">
+            <strong>Respuesta:</strong> {{ respuesta }}
+          </div>
+        {% endif %}
+
+        <div class="alert alert-info" role="alert">
+          <i class="fa-solid fa-lightbulb"></i> <strong>Tip del día:</strong> {{ tip }}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

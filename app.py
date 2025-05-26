@@ -1102,6 +1102,88 @@ def historial():
         )
     return render_template('historial.html', historial=historial)
 
+# — Chat financiero educativo —
+respuestas={
+    "¿qué hace apple?": "Apple es una empresa tecnológica que desarrolla hardware como el iPhone, iPad, Mac y servicios como iCloud y Apple Music.",
+    "¿qué hace amazon?": "Amazon es una empresa de comercio electrónico y servicios en la nube con presencia global.",
+    "¿qué hace tesla?": "Tesla diseña y fabrica automóviles eléctricos y soluciones de energía limpia.",
+    "¿qué hace microsoft?": "Microsoft desarrolla software como Windows y Office, además de servicios en la nube como Azure.",
+    "¿qué es una acción de crecimiento?": "Son acciones de empresas que reinvierten sus utilidades para expandirse, buscando crecimiento acelerado.",
+    "¿qué es una acción de valor?": "Son acciones que cotizan por debajo de su valor intrínseco, ideales para inversionistas a largo plazo.",
+    "¿qué es una cartera diversificada?": "Es una combinación de distintos activos financieros para reducir el riesgo total de inversión.",
+    "¿qué es el análisis técnico?": "Estudia los movimientos de precios y volumen en los mercados para tomar decisiones de inversión.",
+    "¿qué es el análisis fundamental?": "Evalúa la salud financiera de una empresa para estimar su valor real.",
+    "¿cuáles son los sectores más estables?": "Salud, bienes de consumo básico y servicios públicos suelen considerarse sectores defensivos.",
+    "¿cuáles son los riesgos del mercado?": "Incluyen volatilidad, cambios macroeconómicos, tasas de interés y eventos políticos.",
+    "¿qué son las FAANG?": "Es un acrónimo para Facebook, Apple, Amazon, Netflix y Google; empresas tecnológicas líderes.",
+    "¿qué es el mercado bursátil?": "Es un sistema donde se compran y venden acciones de empresas que cotizan públicamente.",
+    "¿cuándo invertir en acciones?": "Cuando tienes un horizonte de largo plazo y puedes asumir cierta tolerancia al riesgo.",
+    "¿qué es un ETF?": "Es un fondo cotizado en bolsa que replica un índice o sector, y se puede comprar como una acción.",
+    "¿cómo saber si una empresa es buena para invertir?": "Debes revisar sus estados financieros, su crecimiento, su modelo de negocio y su estabilidad en el mercado.",
+    "¿qué es una acción?": "Una acción representa una parte proporcional del capital social de una empresa.",
+    "¿qué es una inversión?": "Una inversión es colocar dinero en un instrumento esperando obtener un rendimiento.",
+    "¿qué es un dividendo?": "Es la parte de las ganancias que una empresa reparte entre sus accionistas.",
+    "¿qué es el riesgo financiero?": "Es la probabilidad de perder parte o la totalidad del dinero invertido.",
+    "¿qué es un bono?": "Un bono es un instrumento de deuda emitido por una empresa o gobierno.",
+    "¿qué es una tasa de interés?": "Es el porcentaje que se paga por usar dinero ajeno durante un periodo de tiempo.",
+    "¿qué es la inflación?": "Es el aumento generalizado de los precios con el tiempo, lo que reduce el poder adquisitivo del dinero.",
+    "¿qué es un fondo de inversión?": "Es un vehículo financiero que agrupa dinero de varios inversionistas para invertirlo de forma diversificada.",
+    "¿qué es el perfil de riesgo?": "Es una evaluación de la tolerancia del inversionista frente a posibles pérdidas.",
+    "¿qué es el plazo fijo?": "Es una inversión bancaria donde dejas tu dinero un tiempo determinado a cambio de intereses.",
+    "¿qué es un activo financiero?": "Es cualquier recurso con valor económico que puede generar ingresos o beneficios en el futuro.",
+    "¿qué es el apalancamiento financiero?": "Es usar dinero prestado para aumentar el potencial de rentabilidad de una inversión.",
+    "¿qué es el patrimonio neto?": "Es la diferencia entre tus activos (lo que posees) y tus pasivos (lo que debes).",
+    "¿qué es una IPO?": "Es una Oferta Pública Inicial, cuando una empresa vende acciones al público por primera vez.",
+    "¿qué es el valor intrínseco de una acción?": "Es el valor real estimado de una acción basado en sus fundamentos, no en su precio de mercado.",
+    "¿qué es el análisis técnico?": "Es el estudio de gráficos e indicadores para predecir el comportamiento de precios.",
+    "¿qué es el análisis fundamental?": "Es el análisis de la salud financiera de una empresa para estimar su valor real.",
+    "¿qué es la diversificación?": "Es distribuir tu dinero en diferentes activos para reducir el riesgo global.",
+    "¿cuál es la diferencia entre renta fija y renta variable?": "Renta fija ofrece pagos conocidos (como bonos), renta variable depende del desempeño (como acciones).",
+    "¿qué es el mercado alcista?": "Es un periodo sostenido de crecimiento en los precios de los activos.",
+    "¿qué es el mercado bajista?": "Es un periodo sostenido de caída en los precios de los activos.",
+    "¿qué es un split de acciones?": "Es cuando una empresa divide sus acciones en más unidades sin cambiar su valor total.",
+    "¿qué es la volatilidad?": "Es la medida de cuánto varía el precio de un activo en un periodo de tiempo.",
+}
+
+tips = [
+    "Piensa en tus objetivos a largo plazo antes de invertir.",
+    "Diversificar reduce el riesgo.",
+    "Evita decisiones impulsivas cuando el mercado se mueve.",
+    "Ahorra al menos el 10% de tus ingresos.",
+    "Invierte solo lo que estés dispuesta a perder.",
+    "Consulta fuentes confiables antes de tomar decisiones financieras.",
+]
+
+def buscar_respuesta(pregunta):
+    for clave in respuestas:
+        if clave in pregunta:
+            return respuestas[clave]
+    return "Lo siento, no tengo una respuesta específica para esa pregunta."
+
+@app.route('/chatfinanzas', methods=['GET', 'POST'])
+def chatfinanzas():
+    respuesta = ""
+    tip = random.choice(tips)
+
+    if request.method == 'POST':
+        # Tomar pregunta del texto o del dropdown
+        pregunta = request.form.get('pregunta_texto', '').strip()
+        if not pregunta:
+            pregunta = request.form.get('pregunta_dropdown', '').strip()
+
+        if pregunta:
+            session['ultima_consulta'] = pregunta
+            respuesta = buscar_respuesta(pregunta.lower())
+        else:
+            respuesta = "Por favor selecciona o escribe una pregunta para continuar."
+
+    return render_template(
+        'chatfinanzas.html',
+        respuesta=respuesta,
+        tip=tip,
+        respuestas=respuestas
+    )
+
 @lru_cache(maxsize=1)
 def get_valid_tickers():
     """
