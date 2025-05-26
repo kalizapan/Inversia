@@ -75,7 +75,7 @@ TD_STOCKS_URL = 'https://api.twelvedata.com/stocks'
 
 # - OpenRouter Config -
 OPENROUTER_URL     = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_API_KEY = "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"
+OPENROUTER_API_KEY = "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"
 
 # — Máximos por campo para validación de longitud —
 MAX_LEN = {
@@ -461,14 +461,12 @@ def generate_portfolio_plotly(tickers):
 def get_deepseek_interpretation(prompt_text: str) -> str:
     """
     Llama al endpoint de OpenRouter (deepseek/deepseek-r1-zero:free)
-    usando chat completions y devuelve la interpretación, limpiando
-    cualquier envoltura \boxed{...}.
+    usando chat completions y devuelve la interpretación en texto plano,
+    limpiando cualquier envoltura y eliminando símbolos Markdown.
     """
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type":  "application/json",
-        "HTTP-Referer":  "https://tu-sitio.com",  # opcional
-        "X-Title":       "Inversia"               # opcional
+        "Content-Type":  "application/json"
     }
     payload = {
         "model":    "deepseek/deepseek-r1-zero:free",
@@ -481,18 +479,24 @@ def get_deepseek_interpretation(prompt_text: str) -> str:
     resp.raise_for_status()
     data = resp.json()
 
+    # Extrae el contenido
     try:
         content = data["choices"][0]["message"]["content"].strip()
     except (KeyError, IndexError):
         raise RuntimeError(f"Estructura inesperada en respuesta DeepSeek: {data}")
 
-    # === Limpiar envoltura \boxed{...} si existe ===
-    # Coincide \boxed{cualquier texto} y extrae solo 'cualquier texto'
+    # === Limpiar envoltura \boxed{…} si existe ===
     m = re.match(r'^[\\]?boxed\{(.*)\}$', content, flags=re.DOTALL)
     if m:
         content = m.group(1).strip()
 
-    return content
+    # Elimina símbolos Markdown y caracteres extraños
+    content = re.sub(r'[\*\[\]\(\)`]', '', content)
+    content = re.sub(r'^[\-\u2022]\s*', '', content, flags=re.MULTILINE)
+    content = re.sub(r'>\s*', '', content)
+    content = re.sub(r'\s{2,}', ' ', content)
+
+    return content.strip()
     
 def plot_portfolio(user_id):
     """
@@ -1264,18 +1268,17 @@ def consulta():
         return redirect(url_for('login'))
 
     error          = None
-    resultado      = None
     ticker         = ''
     conversiones   = {}
+    grafico_json   = None
     interpretation = None
-    grafico_json   = None  # ← importante para evitar el UnboundLocalError
 
     if request.method == 'POST':
-        action = request.form.get('action')  # "consult" o "deepseek"
+        action = request.form.get('action')   # "consult" o "deepseek"
         raw    = request.form.get('ticker', '')
         ticker = raw.strip().upper()
 
-        # validaciones básicas
+        # Validaciones básicas
         if not ticker:
             error = 'El ticker es obligatorio.'
         elif len(ticker) > MAX_LEN['ticker']:
@@ -1289,13 +1292,12 @@ def consulta():
                 if ticker not in validos:
                     error = f"Ticker '{ticker}' no está en la lista oficial."
                 else:
-                    # ✅ Gráfico interactivo con Plotly
+                    # Gráfico interactivo
                     grafico_json = fetch_and_plot_td_plotly(ticker)
 
                     # Precio y conversiones
                     data = get_td_timeseries(ticker, interval='1day', outputsize=1)
                     price = float(data['values'][0]['close'])
-
                     rates = get_exchange_rates()
                     conversiones = {
                         'USD': round(price, 2),
@@ -1305,20 +1307,42 @@ def consulta():
                         'JPY': round(price * rates['JPY'], 2),
                     }
 
-                    # Guardar historial si es consulta normal
+                    # Guardar historial
                     if action == 'consult':
                         with SessionLocal() as db:
                             db.add(TickerHistory(user_id=session['user_id'], ticker=ticker))
                             db.commit()
 
-                    # Interpretación solo si se pidió análisis experto
+                    # Análisis experto con DeepSeek
                     if action == 'deepseek':
                         try:
+                            # 1) Descarga datos completos para estadísticas
+                            vals = get_td_timeseries(ticker, interval='1day', outputsize=100)['values']
+                            df_vals = pd.DataFrame(vals)
+                            df_vals['close'] = df_vals['close'].astype(float)
+                            df_vals['date']  = pd.to_datetime(df_vals['datetime'])
+                            df_vals.sort_values('date', inplace=True)
+                            df_vals['Rendimiento'] = np.log(df_vals['close'] / df_vals['close'].shift(1))
+                            df_vals.dropna(inplace=True)
+
+                            # 2) Calcula estadísticas clave
+                            avg_ret = round(df_vals['Rendimiento'].mean(), 4)
+                            vol     = round(df_vals['Rendimiento'].std(), 4)
+                            min_ret = round(df_vals['Rendimiento'].min(), 4)
+                            max_ret = round(df_vals['Rendimiento'].max(), 4)
+
+                            # 3) Construye prompt “plano”
                             prompt = (
                                 f"Como experto financiero y actuario, analiza en texto plano "
-                                f"el gráfico de rendimiento diario de {ticker} y la tabla de conversiones {conversiones}. "
-                                "Sin código, sin fences, sin bullets Markdown."
+                                f"los siguientes datos sobre {ticker}: retorno promedio diario {avg_ret}, "
+                                f"volatilidad {vol}, mínimo {min_ret}, máximo {max_ret}, "
+                                f"y la tabla de conversiones USD {conversiones['USD']}, "
+                                f"MXN {conversiones['MXN']}, EUR {conversiones['EUR']}, "
+                                f"GBP {conversiones['GBP']}, JPY {conversiones['JPY']}. "
+                                "Usa solo texto corrido, sin asteriscos, sin guiones ni corchetes, "
+                                "sin viñetas, sin símbolos especiales."
                             )
+
                             interpretation = get_deepseek_interpretation(prompt)
                         except Exception as e_int:
                             interpretation = f"No se pudo obtener interpretación: {e_int}"
@@ -1329,7 +1353,6 @@ def consulta():
     return render_template(
         'consulta.html',
         error=error,
-        resultado=None,
         grafico_json=grafico_json,
         ticker=ticker,
         conversiones=conversiones,
@@ -1397,9 +1420,12 @@ def portfolio():
         return redirect(url_for('login'))
 
     msg = None
+    error = None
     generate_analysis = False
+    interp_cons = None
+    interp_ind = None
 
-    # 1) manejo de envío de PDF
+    # 1) envío de PDF
     if request.method == 'POST' and 'email' in request.form:
         raw_email = request.form['email'].strip()
         try:
@@ -1417,8 +1443,11 @@ def portfolio():
     with SessionLocal() as db:
         items = db.query(PortfolioItem).filter_by(user_id=session['user_id']).all()
     tickers = [i.ticker for i in items]
+    if not tickers:
+        error = "Portafolio vacío"
+        return render_template('portfolio.html', error=error, tickers=[])
 
-    # 4) validar tickers
+    # 4) validación de tickers
     try:
         validos = get_valid_tickers()
         invalidos = [t for t in tickers if t not in validos]
@@ -1426,7 +1455,7 @@ def portfolio():
             error = (
                 f"Ticker '{invalidos[0]}' no está en la lista oficial."
                 if len(invalidos) == 1 else
-                f"Los siguientes tickers no están en la lista oficial: {', '.join(invalidos)}."
+                f"Tickers inválidos: {', '.join(invalidos)}."
             )
             return render_template('portfolio.html', error=error, tickers=tickers)
     except Exception as e:
@@ -1438,26 +1467,55 @@ def portfolio():
     except Exception as e:
         return render_template('portfolio.html', error=f"Error generando gráficas: {e}", tickers=tickers)
 
-    # 6) interpretaciones
-    interp_cons = interp_ind = None
+    # 6) interpretaciones con DeepSeek, ahora con estadísticas concretas
     if generate_analysis:
+        # reconstruimos los retornos para poder calcular stats
+        series = []
+        for t in tickers:
+            data = get_td_timeseries(t, interval='1day', outputsize=100)['values']
+            df = pd.DataFrame(data)
+            df['close'] = df['close'].astype(float)
+            df['date']  = pd.to_datetime(df['datetime'])
+            df.sort_values('date', inplace=True)
+            df['Rend'] = np.log(df['close'] / df['close'].shift(1))
+            series.append(df.set_index('date')['Rend'].rename(t))
+        df_all = pd.concat(series, axis=1).dropna()
+        df_all['Portfolio'] = df_all.mean(axis=1)
+
+        # Análisis consolidado
         try:
+            avg_p = round(df_all['Portfolio'].mean(), 4)
+            vol_p = round(df_all['Portfolio'].std(), 4)
+            min_p = round(df_all['Portfolio'].min(), 4)
+            max_p = round(df_all['Portfolio'].max(), 4)
+
             prompt1 = (
-                "Como experto financiero y actuario, ofrece un análisis DEL GRÁFICO CONSOLIDADO "
-                "DE RENDIMIENTO en puro texto plano, sin código ni sintaxis."
+                f"Como experto financiero y actuario, analiza en texto plano el gráfico "
+                f"consolidado de rendimiento de mi portafolio con retorno promedio {avg_p}, "
+                f"volatilidad {vol_p}, mínimo {min_p} y máximo {max_p}. "
+                "Usa solo texto corrido sin símbolos especiales."
             )
             interp_cons = get_deepseek_interpretation(prompt1)
         except Exception as e_int:
-            interp_cons = f"No se pudo obtener interpretación: {e_int}"
+            interp_cons = f"No se pudo obtener interpretación consolidada: {e_int}"
 
+        # Análisis individual
         try:
+            stats = []
+            for t in tickers:
+                m = round(df_all[t].mean(), 4)
+                v = round(df_all[t].std(), 4)
+                stats.append(f"{t} retorno promedio {m} y volatilidad {v}")
+            stats_str = ", ".join(stats)
+
             prompt2 = (
-                "Como experto financiero y actuario, ofrece un análisis DEL GRÁFICO INDIVIDUAL "
-                "DE RENDIMIENTO POR ACTIVO en puro texto plano, sin código ni sintaxis."
+                f"Como experto financiero y actuario, analiza en texto plano el gráfico "
+                f"individual de rendimiento por activo. Datos por ticker: {stats_str}. "
+                "Usa solo texto corrido sin símbolos especiales."
             )
             interp_ind = get_deepseek_interpretation(prompt2)
         except Exception as e_int:
-            interp_ind = f"No se pudo obtener interpretación: {e_int}"
+            interp_ind = f"No se pudo obtener interpretación individual: {e_int}"
 
     return render_template(
         'portfolio.html',
