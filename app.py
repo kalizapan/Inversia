@@ -13,6 +13,12 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from functools import lru_cache
 from cachetools import TTLCache, cached
 import yfinance as yf
+import requests
+import pandas as pd
+import numpy as np
+import plotly.graph_objs as go
+import json
+from datetime import datetime, timedelta
 
 # Matplotlib sin GUI
 import matplotlib
@@ -141,10 +147,11 @@ with SessionLocal() as db:
 @cached(td_cache)
 def get_td_timeseries(symbol: str,
                       interval: str = '1day',
-                      outputsize: int = 100) -> dict:
+                      outputsize: int = 100,
+                      retries: int = 3,
+                      wait_seconds: int = 10) -> dict:
     """
-    Devuelve el JSON de TwelveData para ese símbolo y
-    lo cachea 15 min. Lanza ValueError si hay error.
+    Llama a TwelveData controlando errores de cuota por minuto.
     """
     params = {
         'symbol':     symbol,
@@ -153,12 +160,29 @@ def get_td_timeseries(symbol: str,
         'apikey':     TD_API_KEY,
         'format':     'JSON'
     }
-    resp = requests.get(TD_URL, params=params, timeout=10)
-    resp.raise_for_status()
-    data = resp.json()
-    if data.get('status') == 'error':
-        raise ValueError(data.get('message', 'Error desconocido'))
-    return data
+
+    for attempt in range(retries):
+        try:
+            resp = requests.get(TD_URL, params=params, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+
+            if data.get('status') == 'error':
+                msg = data.get('message', 'Error desconocido')
+                if "api credits" in msg.lower():
+                    print(f"[LÍMITE] Esperando {wait_seconds} segundos por créditos...")
+                    time.sleep(wait_seconds)
+                    continue
+                raise ValueError(msg)
+
+            return data
+
+        except RequestException as e:
+            print(f"[ERROR] Intento {attempt+1} fallido para {symbol}: {e}")
+            if attempt < retries - 1:
+                time.sleep(wait_seconds)
+            else:
+                raise
 
 # Tipo de cambio desde frankfurter
 def get_exchange_rates(base='USD'):
@@ -172,21 +196,50 @@ def get_exchange_rates(base='USD'):
         return {'MXN': 0, 'EUR': 0, 'GBP': 0, 'JPY': 0}
 
 
+from functools import lru_cache
+import time
+import requests
+
 @lru_cache(maxsize=100)
 def get_ticker_price(ticker):
-    try:
-        params = {
-            'symbol': ticker,
-            'interval': '1day',
-            'outputsize': 1,
-            'apikey': TD_API_KEY,
-            'format': 'JSON'
-        }
-        r = requests.get(TD_URL, params=params).json()
-        return float(r['values'][0]['close'])
-    except Exception as e:
-        print(f"[ERROR] No se pudo obtener el precio para {ticker}: {e}")
-        return 0.0
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            params = {
+                'symbol': ticker,
+                'interval': '1day',
+                'outputsize': 1,
+                'apikey': TD_API_KEY,
+                'format': 'JSON'
+            }
+            resp = requests.get(TD_URL, params=params, timeout=20)
+            data = resp.json()
+
+            # Verifica errores de la API
+            if data.get('status') == 'error':
+                mensaje = data.get('message', 'Error desconocido')
+                if "run out of api credits" in mensaje.lower():
+                    print("[LÍMITE] Límite de API alcanzado. Esperando 60 segundos...")
+                    time.sleep(60)
+                    continue  # Reintenta después de esperar
+                raise ValueError(mensaje)
+
+            values = data.get('values')
+            if not values or not isinstance(values, list):
+                raise ValueError("Respuesta sin datos válidos")
+
+            close_price = float(values[0]['close'])
+            if close_price <= 0:
+                raise ValueError("Precio inválido")
+
+            return close_price
+
+        except Exception as e:
+            print(f"[ERROR] Fallo en intento {attempt+1} para {ticker}: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(3)
+            else:
+                return None
 
 
 def fetch_and_plot_td(ticker):
@@ -227,16 +280,6 @@ def fetch_and_plot_td(ticker):
     plt.savefig(os.path.join(STATIC_DIR, img))
     plt.close()
     return img
-
-import plotly
-import plotly.graph_objs as go
-import json
-
-import requests
-import pandas as pd
-import numpy as np
-import plotly.graph_objs as go
-import json
 
 def fetch_and_plot_td_plotly(ticker: str) -> str:
     # 1) usar la función cacheada
@@ -341,12 +384,8 @@ def monte_carlo_simulation_yf(ticker: str,
 
     return filename, expected, p5, p95
 
-import requests
-import pandas as pd
-import numpy as np
 import plotly
 import plotly.graph_objs as go
-import json
 
 def generate_portfolio_plotly(tickers):
     """
@@ -355,6 +394,7 @@ def generate_portfolio_plotly(tickers):
     """
     series = []
     for t in tickers:
+        time.sleep(0.5)
         data = get_td_timeseries(t, interval='1day', outputsize=100)
         vals = data.get('values', []) or []
         if not vals:
@@ -469,21 +509,12 @@ def plot_portfolio(user_id):
 
     series = []
     for t in tickers:
-        params = {
-            'symbol':     t,
-            'interval':   '1day',
-            'outputsize': 100,
-            'apikey':     TD_API_KEY,
-            'format':     'JSON'
-        }
-        resp = requests.get(TD_URL, params=params, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        if data.get('status') == 'error':
-            raise ValueError(f"API error para {t}: {data.get('message','desconocido')}")
+        time.sleep(0.5)  # Control de tasa
+        data = get_td_timeseries(t, interval='1day', outputsize=100)
         vals = data.get('values') or []
         if not vals:
             raise ValueError(f"No hay datos para {t}.")
+
         df = pd.DataFrame(vals)
         df['close'] = df['close'].astype(float)
         df['date']  = pd.to_datetime(df['datetime'])
@@ -516,7 +547,6 @@ def plot_portfolio(user_id):
 
     return img_cons, img_ind, tickers
 
-import datetime
 def generate_portfolio_pdf(user_id):
     """
     Crea un PDF con la tabla de activos y ambas gráficas:
@@ -658,7 +688,7 @@ def generate_portfolio_pdf(user_id):
             flowables.append(table2)
             
             # Información adicional
-            today = datetime.datetime.now().strftime("%d/%m/%Y")
+            today = datetime.now().strftime("%d/%m/%Y")
             nota = Paragraph(
                 f"<i>Tasas de cambio obtenidas el {today} desde la API pública de <b>Frankfurter</b>.</i>",
                 styles['Normal']
@@ -1184,18 +1214,49 @@ def chatfinanzas():
         respuestas=respuestas
     )
 
-@lru_cache(maxsize=1)
+TICKERS_CACHE_PATH = "valid_tickers.json"
+TICKERS_CACHE_TTL = timedelta(days=1)
+
 def get_valid_tickers():
     """
-    Descarga y cachea la lista de tickers válidos de Twelve Data.
+    Devuelve un conjunto de tickers válidos.
+    Usa cache en disco (24h) para evitar llamar a Twelve Data innecesariamente.
     """
-    resp = requests.get(TD_STOCKS_URL, params={'apikey': TD_API_KEY}, timeout=10)
-    resp.raise_for_status()
-    data = resp.json()               # { "data": [ { "symbol": "...", ... }, ... ], ... }
-    stocks = data.get('data', [])
-    if not isinstance(stocks, list):
-        raise ValueError("Formato inesperado al obtener lista de tickers")
-    return { item['symbol'] for item in stocks }
+    # 1. Revisar si el archivo cache existe y es reciente
+    if os.path.exists(TICKERS_CACHE_PATH):
+        last_modified = datetime.fromtimestamp(os.path.getmtime(TICKERS_CACHE_PATH))
+        if datetime.now() - last_modified < TICKERS_CACHE_TTL:
+            try:
+                with open(TICKERS_CACHE_PATH, 'r') as f:
+                    tickers = json.load(f)
+                return set(tickers)
+            except Exception as e:
+                print(f"[CACHE] Error leyendo archivo de tickers: {e}")
+
+    # 2. Si no existe o está desactualizado, descargar desde Twelve Data
+    try:
+        print("[INFO] Descargando lista de tickers desde Twelve Data...")
+        resp = requests.get(TD_STOCKS_URL, params={'apikey': TD_API_KEY}, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+
+        stocks = data.get('data', [])
+        if not isinstance(stocks, list):
+            raise ValueError("Formato inesperado en respuesta de Twelve Data")
+
+        symbols = sorted(set(item['symbol'] for item in stocks))
+        with open(TICKERS_CACHE_PATH, 'w') as f:
+            json.dump(symbols, f)
+
+        return set(symbols)
+
+    except Exception as e:
+        print(f"[ERROR] No se pudo actualizar lista de tickers: {e}")
+        # Como fallback, intenta devolver lo que ya hay en cache aunque esté viejo
+        if os.path.exists(TICKERS_CACHE_PATH):
+            with open(TICKERS_CACHE_PATH, 'r') as f:
+                return set(json.load(f))
+        return set()
 
 @app.route('/consulta', methods=['GET', 'POST'])
 def consulta():
@@ -1232,18 +1293,9 @@ def consulta():
                     grafico_json = fetch_and_plot_td_plotly(ticker)
 
                     # Precio y conversiones
-                    resp_json = requests.get(
-                        TD_URL,
-                        params={
-                            'symbol': ticker,
-                            'interval': '1day',
-                            'outputsize': 1,
-                            'apikey': TD_API_KEY,
-                            'format': 'JSON'
-                        },
-                        timeout=10
-                    ).json()
-                    price = float(resp_json['values'][0]['close'])
+                    data = get_td_timeseries(ticker, interval='1day', outputsize=1)
+                    price = float(data['values'][0]['close'])
+
                     rates = get_exchange_rates()
                     conversiones = {
                         'USD': round(price, 2),
