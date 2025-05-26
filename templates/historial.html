@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h2>Historial de Consultas</h2>
+<table style="width:100%; border-collapse: collapse;">
+    <thead>
+        <tr style="background-color:#165bda; color:white;">
+            <th style="padding: 10px;">Ticker</th>
+            <th style="padding: 10px;">Fecha y hora</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for item in historial %}
+        <tr style="border-bottom: 1px solid #ccc;">
+            <td style="padding: 10px;">{{ item.ticker }}</td>
+            <td style="padding: 10px;">{{ item.timestamp }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

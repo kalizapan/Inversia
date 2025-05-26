@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block title %}Tutorial Backtest · Inversia{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-8">
+    <h2 class="mb-4 text-center">¿Qué es el Backtest?</h2>
+    <p>
+      El <strong>backtest</strong> te permite <em>simular</em> cómo habría
+      funcionado una estrategia de inversión basándonos en datos históricos.
+      En esta sección usamos el cruce de dos medias móviles (SMA rápida y lenta)
+      para <em>comprar</em> y <em>vender</em> en el pasado y así medir su desempeño.
+    </p>
+    <h4>¿Cómo usarlo?</h4>
+    <ul>
+      <li><strong>Ticker:</strong> el símbolo de la acción (Ej: AAPL)</li>
+      <li><strong>SMA rápida:</strong> ventana en días para la media móvil “corta”</li>
+      <li><strong>SMA lenta:</strong> ventana en días para la media móvil “larga”</li>
+      <li><strong>Capital inicial:</strong> cuánto dinero hipotético invertirías</li>
+    </ul>
+    <p>
+      Cuando pulses <em>Continuar</em>, pasarás a la pantalla de simulación
+      donde podrás ajustar esos valores y verás:
+    </p>
+    <ul>
+      <li>Curva de equity de la estrategia vs “buy & hold”.</li>
+      <li>Métricas clave: CAGR, Máxima caída (Drawdown) y Sharpe Ratio.</li>
+    </ul>
+    <div class="text-center mt-4">
+      <a href="{{ url_for('backtest_run') }}" class="btn btn-primary btn-lg">
+        Continuar al Backtest
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}

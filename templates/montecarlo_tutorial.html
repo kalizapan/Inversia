@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}Tutorial Monte Carlo · Inversia{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-8">
+    <h2 class="mb-4 text-center">¿Qué es Monte Carlo?</h2>
+    <p>
+      La simulación de Monte Carlo te permite estimar posibles precios
+      futuros de un activo basándote en sus movimientos históricos.
+      Generamos cientos de trayectorias aleatorias de precio para un
+      ticker y luego calculamos un <em>valor esperado</em> y percentiles
+      (5% y 95%) para tu horizonte de tiempo.
+    </p>
+    <h4>¿Cómo usarlo?</h4>
+    <ul>
+      <li><strong>Ticker:</strong> símbolo de la acción (Ej: AAPL)</li>
+    </ul>
+    <p>
+      Al pulsar <em>Continuar</em>, irás a la pantalla donde podrás poner
+      esos valores y ver:
+    </p>
+    <ul>
+      <li>Gráfico de todas las trayectorias simuladas proyectados en 30 dias hábiles.</li>
+      <li>Valor esperado y escenarios (5% y 95%).</li>
+    </ul>
+    <div class="text-center mt-4">
+      <a href="{{ url_for('montecarlo_run') }}" class="btn btn-primary btn-lg">
+        Continuar a Monte Carlo
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}

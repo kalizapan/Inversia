@@ -22,7 +22,7 @@
   <nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow">
     <div class="container">
       <a class="navbar-brand" href="/">
-        Inves<span class="text-warning">ria</span>
+        Inver<span class="text-warning">sia</span>
       </a>
       <button class="navbar-toggler" type="button"
               data-bs-toggle="collapse" data-bs-target="#navbarNav"
@@ -44,11 +44,32 @@
               </a>
             </li>
             <li class="nav-item">
+              <a class="nav-link" href="{{ url_for('montecarlo_tutorial') }}">
+                <i class="fa-solid fa-chart-simple"></i> Monte Carlo
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{{ url_for('backtest_tutorial') }}">
+                <i class="fa-solid fa-chart-line"></i> Backtest
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{{ url_for('historial') }}">
+                <i class="fa-solid fa-clock-rotate-left"></i> Historial
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{{ url_for('chatfinanzas') }}">
+                <i class="fa-solid fa-comments-dollar"></i> Chat Finanzas
+              </a>
+            </li>
+            <li class="nav-item">
               <a class="nav-link" href="{{ url_for('logout') }}">
                 <i class="fa-solid fa-right-from-bracket"></i> Cerrar sesión
               </a>
             </li>
           {% else %}
+
             <li class="nav-item">
               <a class="nav-link" href="{{ url_for('login') }}">
                 <i class="fa-solid fa-right-to-bracket"></i> Iniciar sesión
@@ -77,5 +98,21 @@
     src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"
     crossorigin="anonymous"
   ></script>
+  <script>
+    // Bootstrap form validation
+    (function() {
+      'use strict';
+      var forms = document.querySelectorAll('.needs-validation');
+      Array.prototype.slice.call(forms).forEach(function(form) {
+        form.addEventListener('submit', function(event) {
+          if (!form.checkValidity()) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+          form.classList.add('was-validated');
+        }, false);
+      });
+    })();
+  </script>
 </body>
 </html>

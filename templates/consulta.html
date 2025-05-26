@@ -1,29 +1,27 @@
 {% extends 'base.html' %}
-
 {% block title %}Consulta · Inversia{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
   <div class="col-md-8">
-    <!-- Card de consulta -->
+
+    <!-- 1) Formulario principal de consulta -->
     <div class="card shadow-sm border-0 mb-4">
       <div class="card-body p-4">
         <h3 class="card-title mb-4">
           <i class="fa-solid fa-chart-line"></i> Consulta de Stock
         </h3>
         <form method="POST" class="row g-3 needs-validation" novalidate>
+          <input type="hidden" name="action" value="consult">
           <div class="col-auto flex-grow-1">
             <input
-              type="text"
-              class="form-control"
-              name="ticker"
-              placeholder="Ej: AAPL"
-              required
-              autofocus
+              type="text" name="ticker" class="form-control"
+              placeholder="Ej: AAPL" required
+              pattern="^(?!.*\s{2,}).*\S.*$" maxlength="5"
+              title="Máx 5 caracteres sin espacios dobles."
+              value="{{ ticker }}" autofocus
             >
-            <div class="invalid-feedback">
-              Ingresa un ticker válido.
-            </div>
+            <div class="invalid-feedback">Ingresa un ticker válido.</div>
           </div>
           <div class="col-auto">
             <button type="submit" class="btn btn-primary mb-3">
@@ -31,34 +29,72 @@
             </button>
           </div>
         </form>
-
         {% if error %}
           <div class="alert alert-danger mt-3">{{ error }}</div>
         {% endif %}
       </div>
     </div>
 
-    <!-- Card de resultado y agregar al portafolio -->
-    {% if resultado %}
-    <div class="card shadow-sm border-0">
-      <div class="card-body text-center">
-        <img
-          src="{{ url_for('static', filename=resultado) }}"
-          class="img-fluid rounded"
-          alt="Rendimiento de {{ ticker }}"
-        >
-        <br><br>
-        <form method="POST" action="{{ url_for('add_portfolio') }}">
-          <!-- Campo oculto para enviar el ticker -->
-          <input type="hidden" name="ticker" value="{{ ticker }}">
-          <button class="btn btn-success">
-            <i class="fa-solid fa-plus"></i>
-            Agregar {{ ticker }} al Portafolio
-          </button>
-        </form>
+    <!-- 2) Gráfico y tabla -->
+    {% if grafico_json %}
+      <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body text-center">
+          <h5 class="card-title mb-3">Gráfico de rendimiento diario</h5>
+          <div id="plot" style="width:100%;height:500px;"></div>
+          <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+          <script type="application/json" id="graph-data">
+            {{ grafico_json | safe }}
+          </script>
+          <script>
+            const rawJson = document.getElementById('graph-data').textContent;
+            const graph = JSON.parse(rawJson);
+            Plotly.newPlot('plot', graph.data, graph.layout);
+          </script>
+
+          <form method="POST" action="{{ url_for('add_portfolio') }}" class="mt-4">
+            <input type="hidden" name="ticker" value="{{ ticker }}">
+            <button class="btn btn-success">
+              <i class="fa-solid fa-plus"></i> Agregar {{ ticker }}
+            </button>
+          </form>
+        </div>
       </div>
-    </div>
+
+      {% if conversiones %}
+        <h3>Precio actual en distintas divisas</h3>
+        <table class="table table-sm table-striped mb-4">
+          <thead class="table-primary">
+            <tr><th>Divisa</th><th class="text-end">Precio</th></tr>
+          </thead>
+          <tbody>
+            {% for div, val in conversiones.items() %}
+              <tr><td>{{ div }}</td><td class="text-end">{{ val }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+
+      <!-- 3) Botón que dispara DeepSeek -->
+      <form method="POST" class="mb-4 needs-validation">
+        <input type="hidden" name="ticker" value="{{ ticker }}">
+        <input type="hidden" name="action" value="deepseek">
+        <button type="submit" class="btn btn-outline-secondary">
+          <i class="fa-solid fa-brain"></i> Generar interpretación experta
+        </button>
+      </form>
+
+      <!-- 4) Mostrar interpretación sólo si existe -->
+      {% if interpretation %}
+      <div class="card shadow-sm border-0">
+        <div class="card-body">
+          <h5 class="card-title">Interpretación experta</h5>
+          <p>{{ interpretation }}</p>
+        </div>
+      </div>
+      {% endif %}
+
     {% endif %}
+
   </div>
 </div>
 {% endblock %}

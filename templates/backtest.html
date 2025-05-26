@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+{% block title %}Backtest · Inversia{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-8">
+    <h2 class="mb-4 text-center">Backtesting SMA Crossover</h2>
+
+    <!-- Formulario -->
+    <form method="POST" class="row g-3 needs-validation" novalidate>
+      <div class="col-md-4">
+        <input type="text" name="ticker" class="form-control" placeholder="Ticker (Ej: AAPL)"
+               value="{{ ticker }}" required>
+        <div class="invalid-feedback">Ingresa un ticker.</div>
+      </div>
+      <div class="col-md-2">
+        <input type="number" name="fast" class="form-control" placeholder="SMA rápida"
+               value="{{ fast or 20 }}" min="1" required>
+        <div class="invalid-feedback">Obligatorio.</div>
+      </div>
+      <div class="col-md-2">
+        <input type="number" name="slow" class="form-control" placeholder="SMA lenta"
+               value="{{ slow or 50 }}" min="1" required>
+        <div class="invalid-feedback">Obligatorio.</div>
+      </div>
+      <div class="col-md-2">
+        <input type="number" name="capital" class="form-control" placeholder="Capital inicial"
+               value="{{ capital or 10000 }}" min="1" required>
+        <div class="invalid-feedback">Obligatorio.</div>
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-primary w-100">
+          <i class="fa-solid fa-play"></i> Simular
+        </button>
+      </div>
+    </form>
+
+    {% if error %}
+      <div class="alert alert-danger mt-4">{{ error }}</div>
+    {% endif %}
+
+    {% if graph_json %}
+      <!-- 1) Gráfico -->
+      <div class="card shadow-sm border-0 mb-4 mt-4">
+        <div class="card-body text-center">
+          <h5 class="card-title">Equity Curve vs Buy & Hold</h5>
+          <div id="plot-backtest" style="height:500px;"></div>
+          <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+          <script type="application/json" id="graph-backtest-data">
+            {{ graph_json | safe }}
+          </script>
+          <script>
+            const raw = document.getElementById('graph-backtest-data').textContent;
+            const fig = JSON.parse(raw);
+            Plotly.newPlot('plot-backtest', fig.data, fig.layout);
+          </script>
+        </div>
+      </div>
+
+      <!-- 2) Métricas -->
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h5 class="card-title">Métricas de desempeño</h5>
+          <ul class="list-group list-group-flush">
+            <li class="list-group-item">
+              <strong>CAGR:</strong> {{ "{:.2%}".format(cagr) }}
+            </li>
+            <li class="list-group-item">
+              <strong>Max Drawdown:</strong> {{ "{:.2%}".format(max_dd) }}
+            </li>
+            <li class="list-group-item">
+              <strong>Sharpe Ratio:</strong> {{ "{:.2f}".format(sharpe) }}
+            </li>
+          </ul>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

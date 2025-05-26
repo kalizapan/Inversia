@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Simulación Monte Carlo · Inversia{% endblock %}
+
+{% block content %}
+<div class="col-md-8 mx-auto">
+  <h2 class="mb-4 text-center">Simulación de Monte Carlo</h2>
+
+  <!-- 1) Formulario de simulación -->
+  <form method="POST" action="{{ url_for('montecarlo_run') }}" class="row g-3">
+    <div class="col-sm-9">
+      <input
+        type="text" name="ticker" class="form-control"
+        placeholder="Ticker (Ej: AAPL)" value="{{ ticker }}"
+        required
+      >
+    </div>
+    <div class="col-sm-3">
+      <button type="submit" class="btn btn-primary w-100">
+        <i class="fa-solid fa-play"></i> Simular
+      </button>
+    </div>
+  </form>
+
+  <!-- 2) Error -->
+  {% if error %}
+    <div class="alert alert-danger mt-4">{{ error }}</div>
+  {% endif %}
+
+  <!-- 3) Resultado -->
+  {% if imagen %}
+    <div class="mt-4 text-center">
+      <h5>Resultado de la simulación para <span class="text-primary">{{ ticker }}</span>:</h5>
+      <img
+        src="{{ url_for('static', filename=imagen) }}"
+        alt="Gráfico Monte Carlo"
+        class="img-fluid rounded shadow-sm mt-3"
+      >
+
+      {% if esperado is not none and p5 is not none and p95 is not none %}
+        <div class="mt-4 text-start">
+          <ul class="list-group">
+            <li class="list-group-item">
+              <strong>Valor Esperado:</strong>
+              ${{ '{:.2f}'.format(esperado) }}
+            </li>
+            <li class="list-group-item text-danger">
+              <strong>Escenario Pesimista (5%):</strong>
+              ${{ '{:.2f}'.format(p5) }}
+            </li>
+            <li class="list-group-item text-success">
+              <strong>Escenario Optimista (95%):</strong>
+              ${{ '{:.2f}'.format(p95) }}
+            </li>
+          </ul>
+        </div>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
